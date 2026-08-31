@@ -8,7 +8,12 @@ from typing import Any, Callable
 
 from binaryninja import log_warn
 from binaryninja.interaction import get_choice_input
-from binaryninja.mainthread import execute_on_main_thread_and_wait, is_main_thread
+try:
+    from binaryninja.mainthread import execute_on_main_thread_and_wait, is_main_thread
+except ImportError:
+    from binaryninja.mainthread import execute_on_main_thread_and_wait
+    def is_main_thread() -> bool:
+        return False
 
 from .external import ExternalCommandIndex
 from .router import ExternalCapability, capability_digest

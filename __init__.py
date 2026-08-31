@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MIT
 """Silvergun Binary Ninja plugin entry point."""
 
-from binaryninja import PluginCommand, log_info
+from binaryninja import PluginCommand, log_info, log_warn
 
 from silvergun.commands import (
     annotate_current,
@@ -17,7 +17,11 @@ from silvergun.commands import (
     xref_analysis_current,
 )
 from silvergun.config import register_settings
-from silvergun import sidebar  # noqa: F401 - registers SilvergunSidebarWidgetType
+try:
+    from silvergun import sidebar  # noqa: F401 - registers SilvergunSidebarWidgetType
+except Exception as error:
+    # Keep the core plugin commands available if an older GUI lacks a sidebar API.
+    log_warn(f"Sidebar unavailable; core commands remain enabled: {error}", "Silvergun")
 
 
 register_settings()

@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from binaryninjaui import Sidebar, SidebarContextSensitivity, SidebarWidget, SidebarWidgetType, SidebarWidgetLocation
+from binaryninjaui import Sidebar, SidebarWidget, SidebarWidgetType
+try:
+    from binaryninjaui import SidebarContextSensitivity, SidebarWidgetLocation
+except ImportError:
+    SidebarContextSensitivity = None
+    SidebarWidgetLocation = None
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
 
 from .commands import start_request
-from .ui import ProviderDialog
 
 
 class SilvergunSidebarWidget(SidebarWidget):
@@ -79,6 +83,7 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._submit("Find potential vulnerabilities in the current function. Report evidence, reachability questions, impact, and confidence without overstating.")
 
     def _configure(self) -> None:
+        from .ui import ProviderDialog
         ProviderDialog(self).exec()
 
     def _completed(self, markdown: str) -> None:
@@ -91,18 +96,22 @@ class SilvergunSidebarWidgetType(SidebarWidgetType):
         icon_path = Path(__file__).parent / "assets" / "silvergun_icon.png"
         icon = QImage(str(icon_path))
         if icon.isNull():
-            icon = QImage(56, 56, QImage.Format.Format_ARGB32)
-            icon.fill(Qt.GlobalColor.transparent)
+            icon = QImage(56, 56, QImage.Format_RGB32)
+            icon.fill(0)
         SidebarWidgetType.__init__(self, icon, "Silvergun")
 
     def createWidget(self, frame, data):
         return SilvergunSidebarWidget("Silvergun", frame, data)
 
     def defaultLocation(self):
-        return SidebarWidgetLocation.RightContent
+        return SidebarWidgetLocation.RightContent if SidebarWidgetLocation is not None else None
 
-    def contextSensitivity(self):
-        return SidebarContextSensitivity.SelfManagedSidebarContext
+    if SidebarContextSensitivity is not None:
+        def contextSensitivity(self):
+            return SidebarContextSensitivity.SelfManagedSidebarContext
+    else:
+        def viewSensitive(self):
+            return False
 
 
 SIDEBAR_WIDGET_TYPE = SilvergunSidebarWidgetType()
