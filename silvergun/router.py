@@ -1,4 +1,4 @@
-"""Deterministic, compact capability selection for Lean Ninja."""
+"""Deterministic, compact capability selection for Silvergun."""
 
 from __future__ import annotations
 

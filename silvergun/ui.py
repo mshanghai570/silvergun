@@ -36,7 +36,7 @@ class _ModelLoader(QObject):
                 self.completed.emit(token, [], str(error))
             except Exception as error:
                 self.completed.emit(token, [], f"Model lookup failed: {error}")
-        threading.Thread(target=worker, name="lean-model-list", daemon=True).start()
+        threading.Thread(target=worker, name="silvergun-model-list", daemon=True).start()
 
 
 class ProviderDialog(QDialog):
@@ -47,7 +47,7 @@ class ProviderDialog(QDialog):
         current = config()
         self._token = 0
         self._key_dirty = False
-        self.setWindowTitle("Lean Ninja Provider")
+        self.setWindowTitle("Silvergun Provider")
         self.setMinimumWidth(620)
 
         self.base_url = QLineEdit(current.normalized_base_url)

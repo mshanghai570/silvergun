@@ -180,7 +180,7 @@ class NativeTools:
         original = bytes(self.bv.read(address, len(replacement)))
         reason = str(args.get("reason", ""))
         prompt = f"Apply patch at {hex(address)}?\n\nBefore: {original.hex(' ')}\nAfter:  {replacement.hex(' ')}\n\nReason: {reason}"
-        if not self._confirm("Apply Lean Ninja Patch", prompt):
+        if not self._confirm("Apply Silvergun Patch", prompt):
             return "User declined the patch."
         written = self.bv.write(address, replacement)
         return f"Patch {'applied' if written == len(replacement) else 'partially applied'} at {hex(address)} ({written}/{len(replacement)} bytes)."
@@ -223,9 +223,9 @@ class NativeTools:
         func.comment = comment
         if tag:
             try:
-                func.add_tag("Lean Ninja", tag)
+                func.add_tag("Silvergun", tag)
             except Exception as error:
-                log_warn(f"Comment applied but tag could not be added: {error}", "Lean Ninja")
+                log_warn(f"Comment applied but tag could not be added: {error}", "Silvergun")
         return f"Annotated {func.name}."
 
     def _resolve(self, args: dict[str, Any]):

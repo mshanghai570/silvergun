@@ -1,6 +1,6 @@
-# Lean Ninja
+# Silvergun
 
-**Lean Ninja** is a fast, dependency-free AI coding partner for Binary Ninja. It connects to any provider that implements the common OpenAI-compatible `GET /models` and `POST /chat/completions` endpoints, discovers models while you configure the provider, and limits every agent turn to the smallest relevant set of Binary Ninja and installed-plugin capabilities.
+**Silvergun** is a fast, dependency-free AI coding partner for Binary Ninja. It connects to any provider that implements the common OpenAI-compatible `GET /models` and `POST /chat/completions` endpoints, discovers models while you configure the provider, and limits every agent turn to the smallest relevant set of Binary Ninja and installed-plugin capabilities.
 
 > **Design objective:** Make useful reverse-engineering assistance feel immediate by avoiding a planning model, heavyweight agent framework, local daemon, embeddings database, and full tool catalog on every request.
 
@@ -15,7 +15,7 @@
 
 ## Capabilities
 
-Lean Ninja supplies focused context-menu commands for the selected function and a free-form **Ask** command. The commands collect a compact HLIL-oriented snapshot rather than exporting the full binary or full decompilation database. This keeps remote requests small and makes the evidence used by the model inspectable.
+Silvergun supplies focused context-menu commands for the selected function and a free-form **Ask** command. The commands collect a compact HLIL-oriented snapshot rather than exporting the full binary or full decompilation database. This keeps remote requests small and makes the evidence used by the model inspectable.
 
 | Command | Native tool path | Outcome |
 | --- | --- | --- |
@@ -33,10 +33,10 @@ Lean Ninja supplies focused context-menu commands for the selected function and 
 Clone this repository into a Binary Ninja user plugin directory, or install it through a custom plugin repository. Binary Ninja Python plugins conventionally use a root `plugin.json` manifest and `__init__.py` entry point.[1]
 
 ```bash
-git clone https://github.com/MShin13/bn-lean-agent.git "<Binary Ninja user plugins>/bn-lean-agent"
+git clone https://github.com/MShin13/silvergun.git "<Binary Ninja user plugins>/silvergun"
 ```
 
-Restart Binary Ninja, then open **Plugins → Lean Ninja → Configure Provider...**. For development, Binary Ninja documents a fast reload workflow based on `importlib.reload` for most ordinary Python plugins.[1]
+Restart Binary Ninja, then open **Plugins → Silvergun → Configure Provider...**. For development, Binary Ninja documents a fast reload workflow based on `importlib.reload` for most ordinary Python plugins.[1]
 
 ## Provider setup
 
@@ -51,11 +51,11 @@ Enter your provider’s API root, normally ending in `/v1`, and paste an API key
 | Parallel Reviews | Maximum simultaneous independent remote reviews | 3 |
 | Context Budget | Maximum characters retained in a tool result | 18,000 |
 
-The base URL, model, limits, and cached model names are kept in Binary Ninja **user-scope settings**, never in project or resource settings. API keys are stored only through a configured Binary Ninja secrets provider. If no secrets provider is available, Lean Ninja will not persist the API key; the dialog reports this explicitly. Binary Ninja settings support hierarchical scopes, while `SecretsProvider` exposes storage through registered providers.[2] [3]
+The base URL, model, limits, and cached model names are kept in Binary Ninja **user-scope settings**, never in project or resource settings. API keys are stored only through a configured Binary Ninja secrets provider. If no secrets provider is available, Silvergun will not persist the API key; the dialog reports this explicitly. Binary Ninja settings support hierarchical scopes, while `SecretsProvider` exposes storage through registered providers.[2] [3]
 
 ## Dynamic capability routing
 
-Lean Ninja does not dump every installed plugin command into every prompt. It indexes Binary Ninja commands valid in the active view and represents them as short capability cards. A rule-based router uses the user’s request to select a narrow native tool slice and, at most, four relevant extension commands. If the initial slice is insufficient, the model can invoke `search_capabilities` to retrieve a compact filtered catalog.
+Silvergun does not dump every installed plugin command into every prompt. It indexes Binary Ninja commands valid in the active view and represents them as short capability cards. A rule-based router uses the user’s request to select a narrow native tool slice and, at most, four relevant extension commands. If the initial slice is insufficient, the model can invoke `search_capabilities` to retrieve a compact filtered catalog.
 
 ```mermaid
 flowchart LR
@@ -66,17 +66,17 @@ flowchart LR
     A --> P[Relevant installed-plugin command]
 ```
 
-External commands are discovered through Binary Ninja’s `PluginCommand.get_valid_list` mechanism in the current context. Lean Ninja intentionally treats every third-party command as potentially mutating: it exposes the command only after routing and asks for explicit approval before execution. The host API supports querying and executing valid commands with a `PluginCommandContext`.[4]
+External commands are discovered through Binary Ninja’s `PluginCommand.get_valid_list` mechanism in the current context. Silvergun intentionally treats every third-party command as potentially mutating: it exposes the command only after routing and asks for explicit approval before execution. The host API supports querying and executing valid commands with a `PluginCommandContext`.[4]
 
 ## Parallel investigation
 
-When the agent needs several independent function reviews, it uses `fanout_investigate`. Lean Ninja resolves the requested functions and creates immutable compact snapshots first. Only the remote, read-only reviews run concurrently, under the configured worker budget. It never sends live Binary Ninja function objects across worker boundaries and never fans out mutations. Results retain input order and are returned to the agent for a single concise synthesis.
+When the agent needs several independent function reviews, it uses `fanout_investigate`. Silvergun resolves the requested functions and creates immutable compact snapshots first. Only the remote, read-only reviews run concurrently, under the configured worker budget. It never sends live Binary Ninja function objects across worker boundaries and never fans out mutations. Results retain input order and are returned to the agent for a single concise synthesis.
 
 This model follows Binary Ninja’s separation between UI/main-thread work and non-GUI worker work: long-running work belongs off the UI thread, while UI interactions must be marshaled to the main thread.[5]
 
 ## Security and safety model
 
-Lean Ninja is designed for interactive reverse engineering, not unattended binary modification. Its standard policy is conservative.
+Silvergun is designed for interactive reverse engineering, not unattended binary modification. Its standard policy is conservative.
 
 | Boundary | Policy |
 | --- | --- |
@@ -88,9 +88,9 @@ Lean Ninja is designed for interactive reverse engineering, not unattended binar
 | Other plugin commands | Treat as potentially mutating and require approval. |
 | Agent execution | Limit tool rounds and suppress duplicate calls. |
 
-## Extending Lean Ninja
+## Extending Silvergun
 
-The plugin exposes installed plugin commands through `leanninja.external.ExternalCommandIndex`, which yields `ExternalCapability` cards. Native tools and extension commands share the same routing interface. To add a specialized integration, create another adapter under `leanninja/adapters/` that supplies stable capability identifiers, compact descriptions, and an execution callback; the router and bounded agent need not change.
+The plugin exposes installed plugin commands through `silvergun.external.ExternalCommandIndex`, which yields `ExternalCapability` cards. Native tools and extension commands share the same routing interface. To add a specialized integration, create another adapter under `silvergun/adapters/` that supplies stable capability identifiers, compact descriptions, and an execution callback; the router and bounded agent need not change.
 
 The initial version keeps the extension boundary intentionally small. It does not load arbitrary Python modules, run shell commands, maintain a local server, or introduce an orchestration framework. This minimizes attack surface and prevents startup or context cost from growing with the plugin ecosystem.
 
@@ -99,7 +99,7 @@ The initial version keeps the extension boundary intentionally small. It does no
 The repository includes no third-party dependency and uses the standard-library `unittest` runner. The unit tests exercise provider model discovery, standard tool-call payload construction, and narrow routing without requiring a Binary Ninja installation.
 
 ```bash
-python3 -m compileall -q __init__.py leanninja tests
+python3 -m compileall -q __init__.py silvergun tests
 python3 -m unittest discover -s tests -v
 ```
 
@@ -109,7 +109,7 @@ python3 -m unittest discover -s tests -v
 .
 ├── __init__.py                 # Binary Ninja menu and context-command registration
 ├── plugin.json                 # Plugin Manager metadata
-├── leanninja/
+├── silvergun/
 │   ├── config.py               # User settings, model cache, secret-provider key storage
 │   ├── client.py               # Standard-library OpenAI-compatible transport
 │   ├── router.py               # Deterministic capability router

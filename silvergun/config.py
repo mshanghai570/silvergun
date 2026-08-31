@@ -12,7 +12,7 @@ from binaryninja.enums import SettingsScope
 from binaryninja.secretsprovider import SecretsProvider
 
 
-PREFIX = "leanninja"
+PREFIX = "silvergun"
 SETTINGS = Settings()
 
 
@@ -46,7 +46,7 @@ def _schema(title: str, description: str, kind: str, default, **extra: object) -
 
 def register_settings() -> None:
     """Register non-analysis settings once in the default settings schema."""
-    SETTINGS.register_group(PREFIX, "Lean Ninja")
+    SETTINGS.register_group(PREFIX, "Silvergun")
     definitions = {
         "baseUrl": _schema("Provider Base URL", "OpenAI-compatible API root, normally ending in /v1.", "string", "https://api.openai.com/v1"),
         "model": _schema("Model", "Model identifier to use for chat completions.", "string", ""),

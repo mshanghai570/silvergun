@@ -34,7 +34,7 @@ class ExternalCommandIndex:
         capabilities: list[ExternalCapability] = []
         for command in commands:
             name = getattr(command, "name", "")
-            if not isinstance(name, str) or not name or name.startswith("Lean Ninja\\"):
+            if not isinstance(name, str) or not name or name.startswith("Silvergun\\"):
                 continue
             identifier = self._identifier(name)
             description = str(getattr(command, "description", "") or "No description supplied by the plugin.")

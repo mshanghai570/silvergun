@@ -12,7 +12,7 @@ from .router import CapabilityRouter, Route
 from .tools import NativeTools
 
 
-SYSTEM_PROMPT = """You are Lean Ninja, a concise Binary Ninja reverse-engineering partner.
+SYSTEM_PROMPT = """You are Silvergun, a concise Binary Ninja reverse-engineering partner.
 Use supplied tools before making binary-specific claims. State evidence and uncertainty.
 Never claim that a mutation occurred unless a tool reports it. Do not reveal hidden reasoning;
 return only a short, useful analyst answer with concrete next actions when appropriate."""
@@ -81,7 +81,7 @@ class LeanAgent:
             return "No functions could be resolved for independent review."
         workers = min(max(1, self.settings.parallel_jobs), len(snapshots))
         results: dict[str, str] = {}
-        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="lean-review") as pool:
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="silvergun-review") as pool:
             futures = {pool.submit(self._review_snapshot, snapshot, focus): snapshot["address"] for snapshot in snapshots}
             for future in as_completed(futures):
                 address = futures[future]

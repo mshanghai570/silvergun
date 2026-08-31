@@ -1,9 +1,9 @@
 {
   "pluginmetadataversion": 2,
-  "name": "Lean Ninja",
+  "name": "Silvergun",
   "type": ["ui"],
   "api": ["python3"],
-  "description": "Lean OpenAI-compatible AI coding partner with dynamic tool routing.",
+  "description": "Silvergun: lean OpenAI-compatible AI coding partner with dynamic tool routing.",
   "longdescription": "",
   "license": {
     "name": "MIT",

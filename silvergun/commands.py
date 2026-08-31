@@ -20,7 +20,7 @@ def configure_provider(_bv) -> None:
 
 
 def run_prompt(bv) -> None:
-    request = get_text_line_input("What would you like Lean Ninja to investigate?", "Lean Ninja")
+    request = get_text_line_input("What would you like Silvergun to investigate?", "Silvergun")
     if request:
         _start(bv, None, request)
 
@@ -57,8 +57,8 @@ def inspect_capabilities(bv) -> None:
     index = ExternalCommandIndex()
     capabilities = index.refresh(bv, None, force=True)
     rows = "\n".join(f"| `{item.identifier}` | {item.name} | {item.description or '—'} |" for item in capabilities)
-    report = "# Lean Ninja Capabilities\n\n| ID | Command | Description |\n| --- | --- | --- |\n" + (rows or "| — | No compatible plugin commands are valid in this context. | — |")
-    execute_on_main_thread(lambda: show_markdown_report(bv, "Lean Ninja Capabilities", report, report))
+    report = "# Silvergun Capabilities\n\n| ID | Command | Description |\n| --- | --- | --- |\n" + (rows or "| — | No compatible plugin commands are valid in this context. | — |")
+    execute_on_main_thread(lambda: show_markdown_report(bv, "Silvergun Capabilities", report, report))
 
 
 def _start(bv, function, request: str) -> None:
@@ -69,7 +69,7 @@ class AgentTask(BackgroundTaskThread):
     """Moves network/model work off the UI while preserving explicit write confirmation."""
 
     def __init__(self, bv, function, request: str) -> None:
-        super().__init__("Lean Ninja: preparing compact context", True)
+        super().__init__("Silvergun: preparing compact context", True)
         self._bv = bv
         self._function = function
         self._request = request
@@ -77,17 +77,17 @@ class AgentTask(BackgroundTaskThread):
     def run(self) -> None:
         try:
             settings = config()
-            self.progress = "Lean Ninja: contacting provider"
+            self.progress = "Silvergun: contacting provider"
             client = OpenAICompatibleClient(settings, api_key(settings.normalized_base_url))
             native = NativeTools(self._bv, self._function, ExternalCommandIndex(), settings.max_context_chars)
-            self.progress = "Lean Ninja: routing and analyzing"
+            self.progress = "Silvergun: routing and analyzing"
             result = LeanAgent(client, settings).run(self._request, native)
-            self._report("Lean Ninja", f"# Lean Ninja\n\n**Intent:** `{result.intent}`  \n**Tool rounds:** `{result.rounds}`\n\n{result.answer}")
+            self._report("Silvergun", f"# Silvergun\n\n**Intent:** `{result.intent}`  \n**Tool rounds:** `{result.rounds}`\n\n{result.answer}")
         except ProviderError as error:
-            self._report("Lean Ninja — Provider Error", f"# Provider error\n\n{error}\n\nUse **Lean Ninja → Configure Provider...** to verify the endpoint, API key, and model.")
+            self._report("Silvergun — Provider Error", f"# Provider error\n\n{error}\n\nUse **Silvergun → Configure Provider...** to verify the endpoint, API key, and model.")
         except Exception as error:
-            log_error(f"Lean Ninja task failed: {error}", "Lean Ninja")
-            self._report("Lean Ninja — Error", f"# Lean Ninja error\n\n{error}")
+            log_error(f"Silvergun task failed: {error}", "Silvergun")
+            self._report("Silvergun — Error", f"# Silvergun error\n\n{error}")
         finally:
             self.finish()
 

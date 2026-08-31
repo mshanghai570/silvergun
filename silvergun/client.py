@@ -31,7 +31,7 @@ class ChatCompletion:
 
 
 class OpenAICompatibleClient:
-    """Implements the two interoperable endpoints Lean Ninja needs."""
+    """Implements the two interoperable endpoints Silvergun needs."""
 
     def __init__(self, settings: ProviderSettings, api_key: str) -> None:
         if not settings.normalized_base_url:
@@ -57,7 +57,7 @@ class OpenAICompatibleClient:
         max_tokens: int = 1400,
     ) -> ChatCompletion:
         if not model:
-            raise ProviderError("Choose a model in Lean Ninja > Configure Provider before asking the agent.")
+            raise ProviderError("Choose a model in Silvergun > Configure Provider before asking the agent.")
         body: dict[str, Any] = {
             "model": model,
             "messages": list(messages),
@@ -81,7 +81,7 @@ class OpenAICompatibleClient:
         return ChatCompletion(content, tool_calls, choice.get("finish_reason"), payload)
 
     def _request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> dict[str, Any]:
-        headers = {"Accept": "application/json", "User-Agent": "LeanNinja/0.1"}
+        headers = {"Accept": "application/json", "User-Agent": "Silvergun/0.1"}
         data = None
         if self._api_key:
             headers["Authorization"] = f"Bearer {self._api_key}"

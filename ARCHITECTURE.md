@@ -1,8 +1,8 @@
-# Lean Ninja Architecture
+# Silvergun Architecture
 
 ## Design intent
 
-Lean Ninja is a Python plugin for Binary Ninja 5.3+ that presents a fast, OpenAI-compatible AI coding partner without introducing a framework, local server, database, or mandatory dependency. The host Binary Ninja process remains the source of truth for program state. The agent is deliberately bounded to three tool-execution rounds by default, and a compact rule-based router selects a narrow capability slice before each model call.
+Silvergun is a Python plugin for Binary Ninja 5.3+ that presents a fast, OpenAI-compatible AI coding partner without introducing a framework, local server, database, or mandatory dependency. The host Binary Ninja process remains the source of truth for program state. The agent is deliberately bounded to three tool-execution rounds by default, and a compact rule-based router selects a narrow capability slice before each model call.
 
 > **Principle:** Gather locally, route narrowly, call remotely only when necessary, and commit Binary Ninja mutations only after explicit user approval.
 
@@ -48,7 +48,7 @@ Native analysis tools collect a compact per-function snapshot built from HLIL, f
 
 ## Extensibility seam
 
-External functionality is represented as an `ExternalCapability` with a stable identifier, display name, concise description, action type, and execute callback. The initial adapter wraps compatible Binary Ninja plugin commands. Additional adapters can be placed in `leanninja/adapters/` without changing the agent loop. Native tools use the same descriptor shape; therefore the router and agent do not distinguish built-in versus extension-provided capability except for the mutation policy.
+External functionality is represented as an `ExternalCapability` with a stable identifier, display name, concise description, action type, and execute callback. The initial adapter wraps compatible Binary Ninja plugin commands. Additional adapters can be placed in `silvergun/adapters/` without changing the agent loop. Native tools use the same descriptor shape; therefore the router and agent do not distinguish built-in versus extension-provided capability except for the mutation policy.
 
 ## Deliberate non-goals
 

@@ -10,8 +10,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from leanninja.client import OpenAICompatibleClient
-from leanninja.router import CapabilityRouter, ExternalCapability
+from silvergun.client import OpenAICompatibleClient
+from silvergun.router import CapabilityRouter, ExternalCapability
 
 
 @dataclass
