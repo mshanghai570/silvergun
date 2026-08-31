@@ -96,6 +96,11 @@ class NativeToolsTests(unittest.TestCase):
         self.view = View()
         self.tools = NativeTools(self.view, self.view.functions[0], ExternalCommandIndex(), 4000)
 
+    def test_agent_context_hint_confirms_attached_binary(self):
+        payload = json.loads(self.tools.context_hint())
+        self.assertTrue(payload["binary_view_attached"])
+        self.assertEqual(payload["current_function"]["address"], "0x401000")
+
     def test_context_is_compact_json(self):
         payload = json.loads(self.tools.execute("get_function_context", {}))
         self.assertEqual(payload["address"], "0x401000")

@@ -21,6 +21,9 @@ class SilvergunSidebarWidget(SidebarWidget):
     def __init__(self, name, frame, data):
         super().__init__(name)
         self._frame = frame
+        # Sidebar data can be a UI wrapper; the real BinaryView arrives via
+        # notifyViewChanged on current Binary Ninja builds.
+        self._bv = data if hasattr(data, "functions") else None
         self._data = data
         self._status = QLabel("Ready. Ask a focused question about the current binary.")
         self._status.setWordWrap(True)
@@ -57,10 +60,21 @@ class SilvergunSidebarWidget(SidebarWidget):
         layout.addWidget(self._status)
         layout.addWidget(self._result, 1)
 
+    def notifyViewChanged(self, view):
+        """Receive the active BinaryView from Binary Ninja's sidebar host."""
+        self._bv = view
+        self._status.setText("Ready. Ask a focused question about the current binary.")
+
+    def _active_view(self):
+        if self._bv is not None:
+            return self._bv
+        return self._data if hasattr(self._data, "functions") else None
+
     def _function(self):
         try:
+            view = self._active_view()
             offset = self._frame.getCurrentOffset()
-            return self._data.get_function_containing(offset)
+            return view.get_function_containing(offset) if view is not None else None
         except Exception:
             return None
 
@@ -69,9 +83,13 @@ class SilvergunSidebarWidget(SidebarWidget):
         if not request:
             self._status.setText("Enter a request first.")
             return
+        view = self._active_view()
+        if view is None:
+            self._status.setText("No active BinaryView is available. Open a binary in a Binary Ninja view first.")
+            return
         self._status.setText("Silvergun is analyzing in the background…")
         self._result.setPlainText("")
-        start_request(self._data, request, self._function(), self._completed)
+        start_request(view, request, self._function(), self._completed)
 
     def _ask(self) -> None:
         self._submit(self._prompt.toPlainText())

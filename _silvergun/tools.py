@@ -76,6 +76,28 @@ class NativeTools:
     def definitions(self, names: tuple[str, ...]) -> list[dict[str, Any]]:
         return [TOOL_SCHEMAS[name] for name in names if name in TOOL_SCHEMAS]
 
+    def context_hint(self) -> str:
+        """Return small host metadata that prevents the model treating BN as detached."""
+        filename = ""
+        try:
+            filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
+        except Exception:
+            pass
+        platform = str(getattr(getattr(self.bv, "platform", None), "name", ""))
+        image_base = getattr(self.bv, "start", None)
+        entry = getattr(self.bv, "entry_point", None)
+        current = self._snapshot(self.function) if self.function is not None else None
+        payload = {
+            "binary_view_attached": True,
+            "filename": filename,
+            "platform": platform,
+            "image_base": hex(image_base) if isinstance(image_base, int) else None,
+            "entry_point": hex(entry) if isinstance(entry, int) else None,
+            "function_count": len(getattr(self.bv, "functions", [])),
+            "current_function": current,
+        }
+        return json.dumps(payload, separators=(",", ":"))
+
     def execute(self, name: str, arguments: dict[str, Any]) -> str:
         actions: dict[str, Callable[[dict[str, Any]], str]] = {
             "get_function_context": self._context,
@@ -288,7 +310,13 @@ def _address(value: str, default: int | None) -> int:
         return default
     if not value:
         raise ValueError("address is required")
-    return int(value, 0)
+    try:
+        return int(value, 0)
+    except ValueError:
+        # Some model responses omit 0x while still using hexadecimal digits.
+        if re.fullmatch(r"[0-9a-fA-F]+", value):
+            return int(value, 16)
+        raise
 
 
 def _hex_bytes(value: str) -> bytes:

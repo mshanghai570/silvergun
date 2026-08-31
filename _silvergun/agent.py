@@ -13,8 +13,11 @@ from .tools import NativeTools
 
 
 SYSTEM_PROMPT = """You are Silvergun, a concise Binary Ninja reverse-engineering partner.
-Use supplied tools before making binary-specific claims. State evidence and uncertainty.
-Never claim that a mutation occurred unless a tool reports it. Do not reveal hidden reasoning;
+A live BinaryView context header is supplied with each request. Treat it as authoritative host context.
+Use supplied tools before making binary-specific claims. When an address is supplied, use it as a host
+address with the 0x prefix; do not invent a different format or ask whether the binary is loaded when
+binary_view_attached is true. Omit the address when asking for the current function. State evidence and
+uncertainty. Never claim that a mutation occurred unless a tool reports it. Do not reveal hidden reasoning;
 return only a short, useful analyst answer with concrete next actions when appropriate."""
 
 
@@ -38,7 +41,7 @@ class LeanAgent:
         tools = native.definitions(route.tools)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": self._request_message(request, route)},
+            {"role": "user", "content": self._request_message(request, route, native.context_hint())},
         ]
         executed: set[str] = set()
         for round_number in range(1, self.settings.max_steps + 1):
@@ -102,12 +105,12 @@ class LeanAgent:
         return completion.content.strip() or "No review returned."
 
     @staticmethod
-    def _request_message(request: str, route: Route) -> str:
+    def _request_message(request: str, route: Route, context_hint: str) -> str:
         extension_section = ""
         if route.external:
             cards = "\n".join(capability.card() for capability in route.external)
             extension_section = f"\n\nRelevant installed-plugin capabilities:\n{cards}"
-        return f"Request: {request}\nRouted intent: {route.intent}.{extension_section}"
+        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.{extension_section}"
 
 
 def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
