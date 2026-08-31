@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from silvergun.client import OpenAICompatibleClient
+from silvergun.client import OpenAICompatibleClient, ProviderError
 from silvergun.router import CapabilityRouter, ExternalCapability
 
 
@@ -19,6 +19,7 @@ class Settings:
     normalized_base_url: str
     model: str = "fast-model"
     timeout_seconds: int = 5
+    ca_bundle: str = ""
 
 
 class ProviderHandler(BaseHTTPRequestHandler):
@@ -63,6 +64,10 @@ class ClientTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown()
         cls.thread.join()
+
+    def test_invalid_ca_bundle_fails_closed(self):
+        with self.assertRaisesRegex(ProviderError, "CA bundle path does not exist"):
+            OpenAICompatibleClient(Settings(self.base_url, ca_bundle="/definitely/missing/silvergun-ca.pem"), "test-key")
 
     def test_models_are_deduplicated_and_sorted(self):
         client = OpenAICompatibleClient(Settings(self.base_url), "test-key")

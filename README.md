@@ -50,8 +50,15 @@ Enter your provider’s API root, normally ending in `/v1`, and paste an API key
 | Maximum Tool Rounds | Strict agent operation budget | 3 |
 | Parallel Reviews | Maximum simultaneous independent remote reviews | 3 |
 | Context Budget | Maximum characters retained in a tool result | 18,000 |
+| CA Bundle Path | Optional PEM bundle for providers whose embedded-Python roots are incomplete | Empty; system roots or certifi are attempted |
 
-The base URL, model, limits, and cached model names are kept in Binary Ninja **user-scope settings**, never in project or resource settings. API keys are stored only through a configured Binary Ninja secrets provider. If no secrets provider is available, Silvergun will not persist the API key; the dialog reports this explicitly. Binary Ninja settings support hierarchical scopes, while `SecretsProvider` exposes storage through registered providers.[2] [3]
+The base URL, model, limits, cached model names, and optional CA-bundle path are kept in Binary Ninja **user-scope settings**, never in project or resource settings. API keys are stored only through a configured Binary Ninja secrets provider. If no secrets provider is available, Silvergun will not persist the API key; the dialog reports this explicitly. Binary Ninja settings support hierarchical scopes, while `SecretsProvider` exposes storage through registered providers.[2] [3]
+
+The reported `[SSL: CERTIFICATE_VERIFY_FAILED]` error is handled without an insecure bypass. Silvergun now builds a verifying SSL context, prefers an explicitly selected PEM bundle, then checks `SSL_CERT_FILE`/`REQUESTS_CA_BUNDLE`, and finally uses `certifi` when present before falling back to system roots. The provider dialog includes a **CA bundle** field and **Browse…** button. For a managed or custom provider, point this at the organization’s trusted PEM chain and refresh models again.
+
+## Sidebar interface
+
+Silvergun registers a native Binary Ninja sidebar widget with a ray-gun-inspired monochrome icon. Clicking the icon opens a compact interface attached to the active binary, with a free-form request box, provider shortcut, **Explain current function**, and **Find vulnerabilities** actions. Requests use the same bounded background agent as the menu commands; results are shown in the sidebar and in Binary Ninja’s report view. The widget is GUI-only and follows Binary Ninja’s sidebar registration model.[6]
 
 ## Dynamic capability routing
 
@@ -117,6 +124,8 @@ python3 -m unittest discover -s tests -v
 │   ├── tools.py                # Compact analysis tools and approval-gated mutations
 │   ├── agent.py                # Bounded tool loop and snapshot fan-out reviews
 │   ├── ui.py                   # Debounced provider/model configuration dialog
+│   ├── sidebar.py               # Clickable SidebarWidget interface
+│   ├── assets/silvergun_icon.png # Ray-gun-inspired grayscale sidebar icon
 │   └── commands.py             # Background task and Binary Ninja command callbacks
 ├── tests/test_core.py          # Isolated protocol and router tests
 └── ARCHITECTURE.md             # Design rationale and boundaries
@@ -137,3 +146,5 @@ This project is released under the [MIT License](LICENSE).
 [4] [Binary Ninja: Plugin Command API](https://api.binary.ninja/binaryninja.plugin-module.html)
 
 [5] [Binary Ninja: Main Thread API](https://api.binary.ninja/binaryninja.mainthread-module.html)
+
+[6] [Binary Ninja: UI Plugins and Sidebar Widgets](https://vector35-binaryninja-api.mintlify.app/plugins/ui-plugins)

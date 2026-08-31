@@ -26,6 +26,7 @@ class ProviderConfig:
     max_steps: int
     parallel_jobs: int
     max_context_chars: int
+    ca_bundle: str
 
     @property
     def normalized_base_url(self) -> str:
@@ -56,6 +57,7 @@ def register_settings() -> None:
         "maxSteps": _schema("Maximum Tool Rounds", "Hard limit for agent tool rounds; keep this low for speed.", "number", 3, minValue=1, maxValue=8),
         "parallelJobs": _schema("Parallel Reviews", "Maximum independent remote read-only reviews.", "number", 3, minValue=1, maxValue=8),
         "maxContextChars": _schema("Context Budget", "Maximum compact program context passed to the model.", "number", 18000, minValue=4000, maxValue=64000),
+        "caBundle": _schema("CA Bundle Path", "Optional PEM CA bundle used for provider TLS verification. Leave empty for system roots or certifi.", "string", "", ignore=["SettingsProjectScope", "SettingsResourceScope"]),
     }
     for suffix, props in definitions.items():
         key = f"{PREFIX}.{suffix}"
@@ -71,12 +73,14 @@ def config() -> ProviderConfig:
         max_steps=SETTINGS.get_integer(f"{PREFIX}.maxSteps"),
         parallel_jobs=SETTINGS.get_integer(f"{PREFIX}.parallelJobs"),
         max_context_chars=SETTINGS.get_integer(f"{PREFIX}.maxContextChars"),
+        ca_bundle=SETTINGS.get_string(f"{PREFIX}.caBundle"),
     )
 
 
-def set_provider(base_url: str, model: str) -> None:
+def set_provider(base_url: str, model: str, ca_bundle: str = "") -> None:
     SETTINGS.set_string(f"{PREFIX}.baseUrl", base_url.strip().rstrip("/"), SettingsScope.SettingsUserScope)
     SETTINGS.set_string(f"{PREFIX}.model", model.strip(), SettingsScope.SettingsUserScope)
+    SETTINGS.set_string(f"{PREFIX}.caBundle", ca_bundle.strip(), SettingsScope.SettingsUserScope)
 
 
 def cached_models() -> list[str]:

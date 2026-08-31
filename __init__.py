@@ -17,6 +17,7 @@ from silvergun.commands import (
     xref_analysis_current,
 )
 from silvergun.config import register_settings
+from silvergun import sidebar  # noqa: F401 - registers SilvergunSidebarWidgetType
 
 
 register_settings()

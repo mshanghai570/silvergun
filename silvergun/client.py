@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
+import ssl
 from typing import Any, Iterable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -16,6 +18,7 @@ class ProviderSettings(Protocol):
     normalized_base_url: str
     model: str
     timeout_seconds: int
+    ca_bundle: str
 
 
 class ProviderError(RuntimeError):
@@ -39,6 +42,7 @@ class OpenAICompatibleClient:
         self._base_url = settings.normalized_base_url
         self._api_key = api_key
         self._timeout = max(5, int(settings.timeout_seconds))
+        self._ssl_context = _build_ssl_context(getattr(settings, "ca_bundle", ""))
 
     def list_models(self) -> list[str]:
         payload = self._request("GET", "/models")
@@ -90,12 +94,19 @@ class OpenAICompatibleClient:
             data = json.dumps(body, separators=(",", ":")).encode("utf-8")
         request = Request(f"{self._base_url}{path}", data=data, headers=headers, method=method)
         try:
-            with urlopen(request, timeout=self._timeout) as response:
+            with urlopen(request, timeout=self._timeout, context=self._ssl_context) as response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
         except HTTPError as error:
             detail = _safe_error_body(error)
             raise ProviderError(f"Provider returned HTTP {error.code}: {detail}") from error
         except URLError as error:
+            reason = str(error.reason)
+            if "CERTIFICATE_VERIFY_FAILED" in reason or "certificate verify failed" in reason.lower():
+                raise ProviderError(
+                    "TLS certificate verification failed. Install/update the host CA roots or set "
+                    "Silvergun’s CA Bundle Path to a PEM CA bundle. Verification remains enabled; "
+                    "Silvergun will not disable TLS verification."
+                ) from error
             raise ProviderError(f"Could not reach provider: {error.reason}") from error
         except TimeoutError as error:
             raise ProviderError(f"Provider request timed out after {self._timeout} seconds.") from error
@@ -111,6 +122,23 @@ class OpenAICompatibleClient:
             message = decoded["error"].get("message", "unspecified provider error")
             raise ProviderError(f"Provider error: {message}")
         return decoded
+
+
+def _build_ssl_context(ca_bundle: str) -> ssl.SSLContext:
+    """Build a verifying context, preferring an explicit PEM bundle then certifi."""
+    requested = ca_bundle.strip() or os.environ.get("SSL_CERT_FILE", "").strip() or os.environ.get("REQUESTS_CA_BUNDLE", "").strip()
+    if requested:
+        if not os.path.isfile(requested):
+            raise ProviderError(f"CA bundle path does not exist: {requested}")
+        try:
+            return ssl.create_default_context(cafile=requested)
+        except ssl.SSLError as error:
+            raise ProviderError(f"CA bundle could not be loaded: {error}") from error
+    try:
+        import certifi  # Optional; Binary Ninja installations may not ship it.
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
 
 
 def _text_content(content: Any) -> str:

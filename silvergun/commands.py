@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Callable
+
 from binaryninja import log_error
 from binaryninja.interaction import get_text_line_input, show_markdown_report
 from binaryninja.mainthread import execute_on_main_thread
@@ -62,17 +64,22 @@ def inspect_capabilities(bv) -> None:
 
 
 def _start(bv, function, request: str) -> None:
-    AgentTask(bv, function, request).start()
+    start_request(bv, request, function)
+
+
+def start_request(bv, request: str, function=None, on_complete: Callable[[str], None] | None = None) -> None:
+    AgentTask(bv, function, request, on_complete).start()
 
 
 class AgentTask(BackgroundTaskThread):
     """Moves network/model work off the UI while preserving explicit write confirmation."""
 
-    def __init__(self, bv, function, request: str) -> None:
+    def __init__(self, bv, function, request: str, on_complete: Callable[[str], None] | None = None) -> None:
         super().__init__("Silvergun: preparing compact context", True)
         self._bv = bv
         self._function = function
         self._request = request
+        self._on_complete = on_complete
 
     def run(self) -> None:
         try:
@@ -92,4 +99,8 @@ class AgentTask(BackgroundTaskThread):
             self.finish()
 
     def _report(self, title: str, markdown: str) -> None:
-        execute_on_main_thread(lambda: show_markdown_report(self._bv, title, markdown, markdown))
+        def deliver() -> None:
+            if self._on_complete is not None:
+                self._on_complete(markdown)
+            show_markdown_report(self._bv, title, markdown, markdown)
+        execute_on_main_thread(deliver)

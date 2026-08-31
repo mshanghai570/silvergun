@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QFileDialog,
     QVBoxLayout,
 )
 
@@ -25,11 +26,11 @@ from .config import ProviderConfig, api_key, cached_models, config, has_secret_s
 class _ModelLoader(QObject):
     completed = Signal(int, list, str)
 
-    def load(self, token: int, base_url: str, key: str) -> None:
+    def load(self, token: int, base_url: str, key: str, ca_bundle: str) -> None:
         def worker() -> None:
             try:
                 current = config()
-                temporary = ProviderConfig(base_url.strip().rstrip("/"), "", current.timeout_seconds, current.max_steps, current.parallel_jobs, current.max_context_chars)
+                temporary = ProviderConfig(base_url.strip().rstrip("/"), "", current.timeout_seconds, current.max_steps, current.parallel_jobs, current.max_context_chars, ca_bundle.strip())
                 models = OpenAICompatibleClient(temporary, key).list_models()
                 self.completed.emit(token, models, f"Loaded {len(models)} model(s).")
             except ProviderError as error:
@@ -55,6 +56,10 @@ class ProviderDialog(QDialog):
         self.key = QLineEdit(api_key(current.normalized_base_url))
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
         self.key.setPlaceholderText("API key (stored through Binary Ninja's secret provider when available)")
+        self.ca_bundle = QLineEdit(current.ca_bundle)
+        self.ca_bundle.setPlaceholderText("Optional PEM bundle path; leave empty for system roots or certifi")
+        browse_ca = QPushButton("Browse…")
+        browse_ca.clicked.connect(self._browse_ca_bundle)
         self.model = QComboBox()
         self.model.setEditable(True)
         self.model.addItems(cached_models())
@@ -68,6 +73,10 @@ class ProviderDialog(QDialog):
         form = QFormLayout()
         form.addRow("Base URL", self.base_url)
         form.addRow("API key", self.key)
+        ca_row = QHBoxLayout()
+        ca_row.addWidget(self.ca_bundle)
+        ca_row.addWidget(browse_ca)
+        form.addRow("CA bundle", ca_row)
         form.addRow("Model", self.model)
         controls = QHBoxLayout()
         controls.addWidget(refresh)
@@ -90,6 +99,12 @@ class ProviderDialog(QDialog):
         self._loader.completed.connect(self._models_loaded)
         self.base_url.textChanged.connect(self._schedule_refresh)
         self.key.textChanged.connect(self._mark_key_dirty_and_refresh)
+        self.ca_bundle.textChanged.connect(self._schedule_refresh)
+
+    def _browse_ca_bundle(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Select PEM CA bundle")
+        if path:
+            self.ca_bundle.setText(path)
 
     def _mark_key_dirty_and_refresh(self) -> None:
         self._key_dirty = True
@@ -103,7 +118,7 @@ class ProviderDialog(QDialog):
     def _refresh(self) -> None:
         self._token += 1
         self.status.setText("Loading models…")
-        self._loader.load(self._token, self.base_url.text(), self.key.text())
+        self._loader.load(self._token, self.base_url.text(), self.key.text(), self.ca_bundle.text())
 
     def _models_loaded(self, token: int, models: list, message: str) -> None:
         if token != self._token:
@@ -123,7 +138,7 @@ class ProviderDialog(QDialog):
         if not base_url or not model:
             self.status.setText("Both a base URL and a model are required.")
             return
-        set_provider(base_url, model)
+        set_provider(base_url, model, self.ca_bundle.text())
         set_cached_models(self.model.itemText(index) for index in range(self.model.count()))
         if self._key_dirty:
             if not store_api_key(base_url, self.key.text()):
