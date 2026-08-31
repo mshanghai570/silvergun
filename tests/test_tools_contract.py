@@ -108,6 +108,19 @@ class NativeToolsTests(unittest.TestCase):
         self.assertEqual(payload["address"], "0x401000")
         self.assertIn("puts", payload["hlil"])
         self.assertEqual(payload["parameters_and_locals"], ["arg1: char *"])
+        self.assertTrue(payload["evidence"])
+
+    def test_triage_query_verification_and_code_map_are_local(self):
+        semantic = json.loads(self.tools.execute("semantic_search", {"query": "find functions likely to call puts"}))
+        self.assertEqual(semantic["matches"][0]["address"], "0x401000")
+        query = json.loads(self.tools.execute("query_binary", {"query": "calls:puts"}))
+        self.assertEqual(query["matches"][0]["address"], "0x401000")
+        verification = json.loads(self.tools.execute("get_verification", {}))
+        self.assertEqual(verification["status"], "evidence attached")
+        self.assertTrue(verification["proven"])
+        code_map = json.loads(self.tools.execute("code_map", {"address": "0x401000"}))
+        self.assertEqual(code_map["root"], "0x401000")
+        self.assertEqual(code_map["nodes"][0]["evidence"], "caller/callee relation from 0x401000")
 
     def test_host_reads_are_marshaled_from_agent_thread(self):
         original_is_main_thread = tools_module.is_main_thread

@@ -37,6 +37,10 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("xrefs", ("xref", "cross reference", "caller", "callee", "call graph"), ("get_function_context", "get_xrefs")),
     ("annotate", ("annotate", "comment", "document", "tag"), ("get_function_context", "annotate_function")),
     ("vulnerabilities", ("vulnerability", "vulnerable", "exploit", "overflow", "use after", "uaf", "taint", "security"), ("get_function_context", "get_xrefs", "review_vulnerabilities")),
+    ("triage", ("semantic", "meaning", "stripped", "likely", "triage", "bnql", "query", "search functions"), ("semantic_search", "query_binary", "get_verification")),
+    ("verify", ("verify", "evidence", "proven", "prove", "source", "grounded"), ("get_function_context", "get_xrefs", "get_verification")),
+    ("map", ("code map", "map", "relationship", "execution path", "call graph"), ("get_function_context", "code_map")),
+    ("notebook", ("notebook", "finding", "record this", "remember", "handoff"), ("get_verification", "notebook_context", "notebook_record")),
     ("investigate", ("investigate", "audit", "review", "find all", "multiple functions"), ("find_functions", "fanout_investigate")),
     ("plugins", ("plugin", "extension", "capability", "command"), ("get_function_context", "search_capabilities", "invoke_external_command")),
 )

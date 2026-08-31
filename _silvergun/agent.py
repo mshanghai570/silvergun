@@ -14,11 +14,23 @@ from .tools import NativeTools
 
 SYSTEM_PROMPT = """You are Silvergun, a concise Binary Ninja reverse-engineering partner.
 A live BinaryView context header is supplied with each request. Treat it as authoritative host context.
-Use supplied tools before making binary-specific claims. When an address is supplied, use it as a host
+Use supplied tools before making binary-specific claims and cite their evidence in your answer. Clearly
+separate PROVEN host facts from INFERRED interpretations and HYPOTHESES. When an address is supplied, use it as a host
 address with the 0x prefix; do not invent a different format or ask whether the binary is loaded when
 binary_view_attached is true. Omit the address when asking for the current function. State evidence and
-uncertainty. Never claim that a mutation occurred unless a tool reports it. Do not reveal hidden reasoning;
-return only a short, useful analyst answer with concrete next actions when appropriate."""
+uncertainty. Use semantic_search or query_binary for stripped-binary triage, get_verification for trust
+checks, code_map for relationships, and notebook tools for durable findings. Never claim that a mutation
+occurred unless a tool reports it. Do not reveal hidden reasoning; return only a short, useful analyst
+answer with concrete next actions when appropriate."""
+
+ROUTE_GUIDANCE = {
+    "triage": "Triage locally first; return a ranked shortlist with the exact matching evidence for each function.",
+    "verify": "Verify before interpreting; label every statement PROVEN, INFERRED, or HYPOTHESIS and cite a host source.",
+    "map": "Build the relationship map before explaining control flow; distinguish observed edges from behavioral guesses.",
+    "notebook": "Use the notebook as durable context and record only concise findings with evidence and confidence.",
+    "vulnerabilities": "Treat detector hits as leads only; report the matched operation, reachability question, and missing proof.",
+    "investigate": "Decompose the objective into bounded, evidence-producing sub-investigations and synthesize only after tool results.",
+}
 
 
 @dataclass(frozen=True)
@@ -117,7 +129,8 @@ class LeanAgent:
         if route.external:
             cards = "\n".join(capability.card() for capability in route.external)
             extension_section = f"\n\nRelevant installed-plugin capabilities:\n{cards}"
-        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.{extension_section}"
+        guidance = ROUTE_GUIDANCE.get(route.intent, "Gather the smallest relevant evidence before answering and state uncertainty explicitly.")
+        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.\nOperational directive: {guidance}{extension_section}"
 
 
 def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:

@@ -55,6 +55,18 @@ def find_vulnerabilities_current(bv, function) -> None:
     _start(bv, function, "Perform a focused vulnerability review. Use heuristic leads and function/xref context. Report evidence, reachability questions, impact, and confidence. Do not overstate findings.")
 
 
+def triage_binary(bv) -> None:
+    _start(bv, None, "Triage this binary using semantic_search and query_binary. Return the highest-value functions to inspect with evidence and uncertainty.")
+
+
+def verify_current(bv, function) -> None:
+    _start(bv, function, "Verify the current function. Separate PROVEN host facts from INFERRED interpretations and cite every evidence locator.")
+
+
+def map_current(bv, function) -> None:
+    _start(bv, function, "Build a compact code map for this function and explain the important caller/callee relationships with evidence.")
+
+
 def inspect_capabilities(bv) -> None:
     index = ExternalCommandIndex()
     capabilities = index.refresh(bv, None, force=True)

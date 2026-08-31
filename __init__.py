@@ -10,10 +10,13 @@ from _silvergun.commands import (
     explain_current,
     find_vulnerabilities_current,
     inspect_capabilities,
+    map_current,
     rename_current,
     run_prompt,
     smart_patch_current,
     suggest_types_current,
+    triage_binary,
+    verify_current,
     xref_analysis_current,
 )
 from _silvergun.config import register_settings
@@ -35,6 +38,9 @@ PluginCommand.register_for_function("Silvergun\\Suggest Types", "Recover and pro
 PluginCommand.register_for_function("Silvergun\\Analyze Xrefs", "Analyze callers, callees, and cross-reference implications.", xref_analysis_current)
 PluginCommand.register_for_function("Silvergun\\Annotate Function", "Draft evidence-backed function comments and tags.", annotate_current)
 PluginCommand.register_for_function("Silvergun\\Find Vulnerabilities", "Perform a focused vulnerability review.", find_vulnerabilities_current)
+PluginCommand.register("Silvergun\\Triage Binary", "Rank likely-interesting functions using local semantic evidence.", triage_binary)
+PluginCommand.register_for_function("Silvergun\\Verify Current Function", "Separate proven facts from inferred interpretations.", verify_current)
+PluginCommand.register_for_function("Silvergun\\Code Map", "Map local caller/callee relationships.", map_current)
 PluginCommand.register("Silvergun\\Inspect Available Capabilities", "List native tools and compatible installed plugin commands.", inspect_capabilities)
 
 log_info("Silvergun loaded", "Silvergun")

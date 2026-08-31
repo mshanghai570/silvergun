@@ -16,6 +16,7 @@ except ImportError:
         return False
 
 from .external import ExternalCommandIndex
+from .notebook import AnalysisNotebook, Finding
 from .router import ExternalCapability, capability_digest
 
 
@@ -60,6 +61,12 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "get_xrefs": _function_schema("get_xrefs", "Get compact caller and callee evidence for a function.", {"address": {"type": "string", "description": "Optional hexadecimal function address."}}),
     "get_type_evidence": _function_schema("get_type_evidence", "Get the current signature and parameter/local type evidence.", {"address": {"type": "string", "description": "Optional hexadecimal function address."}}),
     "review_vulnerabilities": _function_schema("review_vulnerabilities", "Run a deterministic first-pass check for risky calls, formatting, memory, and integer hints; report evidence, not certainty.", {"address": {"type": "string", "description": "Optional hexadecimal function address."}}),
+    "semantic_search": _function_schema("semantic_search", "Rank functions by meaning-like lexical evidence from names, signatures, and compact HLIL. Useful for stripped-binary triage.", {"query": {"type": "string"}, "max_results": {"type": "integer", "minimum": 1, "maximum": 24}}, ["query"]),
+    "query_binary": _function_schema("query_binary", "Run a bounded local BNQL-style query: name~text, calls:text, has:text, or addr:0xADDRESS.", {"query": {"type": "string"}}, ["query"]),
+    "get_verification": _function_schema("get_verification", "Separate host-proven facts from model inferences and attach source locators to the selected function.", {"address": {"type": "string", "description": "Optional hexadecimal function address."}}),
+    "code_map": _function_schema("code_map", "Build a compact caller/callee relationship map for visual navigation.", {"address": {"type": "string"}, "depth": {"type": "integer", "minimum": 1, "maximum": 3}}, ["address"]),
+    "notebook_context": _function_schema("notebook_context", "Load the latest local findings recorded for this binary.", {}),
+    "notebook_record": _function_schema("notebook_record", "Record a finding locally for future investigations; never writes to the binary.", {"title": {"type": "string"}, "note": {"type": "string"}, "address": {"type": "string"}, "evidence": {"type": "array", "items": {"type": "string"}}, "confidence": {"type": "string", "enum": ["proven", "inferred", "hypothesis"]}}, ["title", "note", "evidence"]),
     "fanout_investigate": _function_schema("fanout_investigate", "Request independent read-only reviews of several functions. The execution layer snapshots first, then runs bounded remote work in parallel.", {"addresses": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8}, "focus": {"type": "string", "description": "Question each review should answer."}}, ["addresses", "focus"]),
     "search_capabilities": _function_schema("search_capabilities", "Search the compact index of compatible installed Binary Ninja plugin commands.", {"query": {"type": "string"}}, ["query"]),
     "invoke_external_command": _function_schema("invoke_external_command", "Invoke a capability from another installed Binary Ninja plugin. Always requires user approval.", {"capability_id": {"type": "string"}}, ["capability_id"]),
@@ -78,6 +85,7 @@ class NativeTools:
         self.function = function
         self.external = external
         self.max_context_chars = max(4000, max_context_chars)
+        self._triage_index: list[tuple[Any, str, str]] | None = None
         # AgentTask runs on a BackgroundTaskThread. Plugin-command discovery and
         # every BinaryView access must be marshalled to Binary Ninja's API thread.
         self.capabilities: list[ExternalCapability] = _on_main_thread(lambda: external.refresh(bv, function))
@@ -116,6 +124,12 @@ class NativeTools:
             "get_xrefs": self._xrefs,
             "get_type_evidence": self._type_evidence,
             "review_vulnerabilities": self._vulnerability_hints,
+            "semantic_search": self._semantic_search,
+            "query_binary": self._query_binary,
+            "get_verification": self._verification,
+            "code_map": self._code_map,
+            "notebook_context": self._notebook_context,
+            "notebook_record": self._notebook_record,
             "search_capabilities": self._search_capabilities,
             "invoke_external_command": self._invoke_external,
             "apply_patch": self._apply_patch,
@@ -193,6 +207,104 @@ class NativeTools:
         }
         hints = [{"class": category, "matched": [needle for needle in needles if needle in text]} for category, needles in patterns.items() if any(needle in text for needle in needles)]
         return json.dumps({"function": hex(func.start), "heuristic_hints": hints, "note": "Heuristics are leads only. Verify source/sink reachability and bounds in the IL."}, separators=(",", ":"))
+
+    def _semantic_search(self, args: dict[str, Any]) -> str:
+        query = str(args.get("query", "")).strip().lower()
+        terms = [term for term in re.findall(r"[a-z0-9_]{3,}", query) if term not in {"find", "show", "likely", "functions"}]
+        limit = min(24, max(1, int(args.get("max_results", 10))))
+        if not terms:
+            return json.dumps({"query": query, "matches": [], "note": "Add at least one meaningful search term."}, separators=(",", ":"))
+        ranked = []
+        for function, name, haystack in self._triage_records():
+            score = sum((3 if term in str(function.name).lower() else 1) for term in terms if term in haystack)
+            if score:
+                ranked.append((score, function))
+        ranked.sort(key=lambda item: (-item[0], item[1].start))
+        matches = [{"address": hex(function.start), "name": function.name, "score": score, "evidence": [f"HLIL/name/signature match for: {', '.join(terms)}"]} for score, function in ranked[:limit]]
+        return json.dumps({"query": query, "matches": matches, "method": "bounded lexical semantic triage; verify each result"}, separators=(",", ":"))
+
+    def _query_binary(self, args: dict[str, Any]) -> str:
+        query = str(args.get("query", "")).strip()
+        lowered = query.lower()
+        matches = []
+        if lowered.startswith("addr:"):
+            try:
+                function = self._function_at(_address(query.split(":", 1)[1], None))
+            except ValueError:
+                function = None
+            if function is not None:
+                matches.append(self._result_row(function, "address predicate"))
+        else:
+            operator, _, value = lowered.partition(":")
+            if operator not in {"name~", "calls", "has"}:
+                operator, value = "has", lowered
+            for function, name, haystack in self._triage_records():
+                if (operator == "name~" and value in name) or (operator == "calls" and value in haystack) or (operator == "has" and value in f"{name} {haystack}"):
+                    matches.append(self._result_row(function, f"{operator}:{value}"))
+                    if len(matches) >= 32:
+                        break
+        return json.dumps({"query": query, "matches": matches, "syntax": "name~:text | calls:text | has:text | addr:0xADDRESS"}, separators=(",", ":"))
+
+    def _verification(self, args: dict[str, Any]) -> str:
+        func = self._resolve(args)
+        if func is None:
+            return json.dumps({"proven": [], "inferred": [], "status": "no target"}, separators=(",", ":"))
+        snapshot = self._snapshot(func)
+        return json.dumps({"status": "evidence attached", "proven": [{"claim": "Function exists in the active BinaryView", "source": f"BinaryView function table at {snapshot['address']}"}, {"claim": "Current signature", "value": snapshot["signature"], "source": f"Function.type at {snapshot['address']}"}, {"claim": "HLIL is available", "source": f"HLIL instructions at {snapshot['address']}" if snapshot["hlil"] else "No HLIL returned"}], "inferred": [{"claim": "Behavioral interpretation", "note": "Must be supported by the cited HLIL, xrefs, or memory evidence."}], "evidence": snapshot["evidence"]}, separators=(",", ":"))
+
+    def _code_map(self, args: dict[str, Any]) -> str:
+        root = self._resolve(args)
+        if root is None:
+            return json.dumps({"nodes": [], "edges": [], "status": "target not found"}, separators=(",", ":"))
+        depth = min(3, max(1, int(args.get("depth", 1))))
+        seen = {root.start: (root, 0)}
+        frontier = [root]
+        for level in range(depth):
+            next_frontier = []
+            for function in frontier:
+                for neighbor in list(getattr(function, "callers", [])) + list(getattr(function, "callees", [])):
+                    if neighbor.start not in seen:
+                        seen[neighbor.start] = (neighbor, level + 1)
+                        next_frontier.append(neighbor)
+            frontier = next_frontier
+        edges = []
+        for function, _level in seen.values():
+            for callee in getattr(function, "callees", []):
+                if callee.start in seen:
+                    edges.append({"from": hex(function.start), "to": hex(callee.start), "kind": "calls"})
+        nodes = [{"address": hex(function.start), "name": function.name, "depth": level, "evidence": f"caller/callee relation from {hex(root.start)}"} for function, level in seen.values()]
+        return json.dumps({"root": hex(root.start), "nodes": nodes, "edges": edges}, separators=(",", ":"))
+
+    def _notebook_context(self, _args: dict[str, Any]) -> str:
+        filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
+        return AnalysisNotebook(filename).compact_context()
+
+    def _notebook_record(self, args: dict[str, Any]) -> str:
+        filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
+        evidence = tuple(str(item) for item in args.get("evidence", []) if item)
+        record = AnalysisNotebook(filename).add(Finding(str(args.get("title", "Untitled finding")), str(args.get("note", "")), str(args.get("address", "")), evidence, str(args.get("confidence", "inferred"))))
+        return json.dumps({"recorded": record, "path": str(AnalysisNotebook(filename).path), "note": "Local notebook only; binary unchanged."}, separators=(",", ":"))
+
+    @staticmethod
+    def _il_text(function) -> str:
+        try:
+            return " ".join(str(instruction) for block in function.hlil for instruction in block)[:6000]
+        except Exception:
+            return ""
+
+    def _triage_records(self) -> list[tuple[Any, str, str]]:
+        """Build one bounded in-memory index per agent task, avoiding repeated HLIL walks."""
+        if self._triage_index is None:
+            self._triage_index = []
+            for function in list(getattr(self.bv, "functions", []))[:2000]:
+                name = str(getattr(function, "name", "")).lower()
+                haystack = f"{name} {getattr(function, 'type', '')} {self._il_text(function)}".lower()
+                self._triage_index.append((function, name, haystack))
+        return self._triage_index
+
+    @staticmethod
+    def _result_row(function, predicate: str) -> dict[str, Any]:
+        return {"address": hex(function.start), "name": function.name, "predicate": predicate, "evidence": f"BinaryView function table + HLIL at {hex(function.start)}"}
 
     def _search_capabilities(self, args: dict[str, Any]) -> str:
         query = str(args.get("query", "")).lower().strip()
@@ -305,6 +417,7 @@ class NativeTools:
             "callers": _edge_list(getattr(func, "callers", []), limit=16),
             "callees": _edge_list(getattr(func, "callees", []), limit=16),
             "hlil": "\n".join(il_lines),
+            "evidence": [f"BinaryView function table: {hex(func.start)}", f"Function.type: {hex(func.start)}", f"HLIL instructions: {hex(func.start)}" if il_lines else f"HLIL unavailable: {hex(func.start)}"],
         }
 
     @staticmethod

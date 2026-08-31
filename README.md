@@ -27,6 +27,10 @@ Silvergun supplies focused context-menu commands for the selected function and a
 | Annotate Function | `get_function_context`, `annotate_function` | Drafts concise function comments and optional tags. |
 | Find Vulnerabilities | `get_function_context`, `get_xrefs`, `review_vulnerabilities` | Produces evidence-based leads for manual verification; it does not claim a finding from heuristic matches alone. |
 | Ask | Capability router | Routes natural-language requests to a small relevant tool slice. |
+| Triage Binary | `semantic_search`, `query_binary` | Ranks likely-interesting functions locally, including stripped binaries, before spending a remote model call. |
+| Verify Current Function | `get_verification` | Separates host-proven facts from inferred interpretation and attaches source locators. |
+| Code Map | `code_map` | Produces a compact caller/callee graph for navigation and model-assisted explanation. |
+| Analysis Notebook | `notebook_context`, `notebook_record` | Persists up to 200 evidence-backed findings per binary on the local machine. |
 
 ## Installation
 
@@ -75,6 +79,12 @@ flowchart LR
 
 External commands are discovered through Binary Ninja’s `PluginCommand.get_valid_list` mechanism in the current context. Silvergun intentionally treats every third-party command as potentially mutating: it exposes the command only after routing and asks for explicit approval before execution. The host API supports querying and executing valid commands with a `PluginCommandContext`.[4]
 
+## Evidence-first triage and notebook
+
+Silvergun’s differentiator is a local trust layer rather than an opaque answer window. `semantic_search` performs bounded lexical-semantic triage across function names, signatures, and compact HLIL, while `query_binary` supports a small deterministic query language: `name~:text`, `calls:text`, `has:text`, and `addr:0xADDRESS`. These searches run locally and return ranked matches with evidence, so broad objectives can start quickly on stripped binaries without sending the whole program to a provider.
+
+The `get_verification` tool labels host facts as proven and behavioral conclusions as inferred or hypothetical. Context snapshots include source locators for the BinaryView function table, `Function.type`, and HLIL instructions. Findings can be recorded in the local per-binary Analysis Notebook; writes use a temporary file replacement and retain at most 200 records. No notebook content or telemetry is sent anywhere unless the user explicitly includes it in a provider request.
+
 ## Parallel investigation
 
 When the agent needs several independent function reviews, it uses `fanout_investigate`. Silvergun resolves the requested functions and creates immutable compact snapshots first. Only the remote, read-only reviews run concurrently, under the configured worker budget. It never sends live Binary Ninja function objects across worker boundaries and never fans out mutations. Results retain input order and are returned to the agent for a single concise synthesis.
@@ -119,6 +129,7 @@ python3 -m unittest discover -s tests -v
 ├── _silvergun/                # Private implementation package; root silvergun module is the BN loader
 │   ├── config.py               # User settings, model cache, secret-provider key storage
 │   ├── client.py               # Standard-library OpenAI-compatible transport
+│   ├── notebook.py             # Atomic local per-binary findings notebook
 │   ├── router.py               # Deterministic capability router
 │   ├── external.py             # Installed PluginCommand index and guarded executor
 │   ├── tools.py                # Compact analysis tools and approval-gated mutations

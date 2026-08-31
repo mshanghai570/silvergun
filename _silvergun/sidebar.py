@@ -111,6 +111,12 @@ class SilvergunSidebarWidget(SidebarWidget):
         explain.clicked.connect(self._explain)
         security = QPushButton("SCAN VULNERABILITIES")
         security.clicked.connect(self._security)
+        triage = QPushButton("TRIAGE BINARY")
+        triage.clicked.connect(self._triage)
+        verify = QPushButton("VERIFY TARGET")
+        verify.clicked.connect(self._verify)
+        code_map = QPushButton("CODE MAP")
+        code_map.clicked.connect(self._map)
         configure = QPushButton("PROVIDER")
         configure.clicked.connect(self._configure)
         command_row = QHBoxLayout()
@@ -119,6 +125,10 @@ class SilvergunSidebarWidget(SidebarWidget):
         quick = QHBoxLayout()
         quick.addWidget(explain)
         quick.addWidget(security)
+        advanced = QHBoxLayout()
+        advanced.addWidget(triage)
+        advanced.addWidget(verify)
+        advanced.addWidget(code_map)
 
         result_label = QLabel("INVESTIGATION OUTPUT")
         mark(result_label, "eyebrow")
@@ -137,6 +147,7 @@ class SilvergunSidebarWidget(SidebarWidget):
         layout.addWidget(self._prompt)
         layout.addLayout(command_row)
         layout.addLayout(quick)
+        layout.addLayout(advanced)
         layout.addWidget(result_label)
         layout.addWidget(self._result, 1)
         self._update_target()
@@ -269,6 +280,15 @@ class SilvergunSidebarWidget(SidebarWidget):
 
     def _security(self) -> None:
         self._submit("Find potential vulnerabilities in the current function. Report evidence, reachability questions, impact, and confidence without overstating.")
+
+    def _triage(self) -> None:
+        self._submit("Triage this binary using semantic search and local query results. Return a ranked shortlist of high-value functions with evidence and uncertainty.")
+
+    def _verify(self) -> None:
+        self._submit("Verify the current function. Separate PROVEN host facts from INFERRED interpretations and cite every evidence locator.")
+
+    def _map(self) -> None:
+        self._submit("Build a compact code map for the current function and explain the important caller/callee relationships with evidence.")
 
     def _configure(self) -> None:
         from .ui import ProviderDialog
