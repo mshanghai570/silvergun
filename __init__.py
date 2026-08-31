@@ -4,7 +4,7 @@
 
 from binaryninja import PluginCommand, log_info, log_warn
 
-from silvergun.commands import (
+from _silvergun.commands import (
     annotate_current,
     configure_provider,
     explain_current,
@@ -16,9 +16,9 @@ from silvergun.commands import (
     suggest_types_current,
     xref_analysis_current,
 )
-from silvergun.config import register_settings
+from _silvergun.config import register_settings
 try:
-    from silvergun import sidebar  # noqa: F401 - registers SilvergunSidebarWidgetType
+    from _silvergun import sidebar  # noqa: F401 - registers SilvergunSidebarWidgetType
 except Exception as error:
     # Keep the core plugin commands available if an older GUI lacks a sidebar API.
     log_warn(f"Sidebar unavailable; core commands remain enabled: {error}", "Silvergun")

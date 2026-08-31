@@ -39,8 +39,8 @@ def install_binaryninja_stub():
 
 
 install_binaryninja_stub()
-from silvergun.external import ExternalCommandIndex
-from silvergun.tools import NativeTools
+from _silvergun.external import ExternalCommandIndex
+from _silvergun.tools import NativeTools
 
 
 class Instruction:

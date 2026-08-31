@@ -10,8 +10,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from silvergun.client import OpenAICompatibleClient, ProviderError
-from silvergun.router import CapabilityRouter, ExternalCapability
+from _silvergun.client import OpenAICompatibleClient, ProviderError
+from _silvergun.router import CapabilityRouter, ExternalCapability
 
 
 @dataclass

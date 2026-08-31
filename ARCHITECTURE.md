@@ -48,7 +48,7 @@ Native analysis tools collect a compact per-function snapshot built from HLIL, f
 
 ## Extensibility seam
 
-External functionality is represented as an `ExternalCapability` with a stable identifier, display name, concise description, action type, and execute callback. The initial adapter wraps compatible Binary Ninja plugin commands. Additional adapters can be placed in `silvergun/adapters/` without changing the agent loop. Native tools use the same descriptor shape; therefore the router and agent do not distinguish built-in versus extension-provided capability except for the mutation policy.
+External functionality is represented as an `ExternalCapability` with a stable identifier, display name, concise description, action type, and execute callback. The initial adapter wraps compatible Binary Ninja plugin commands. Additional adapters can be placed in `_silvergun/adapters/` without changing the agent loop. The underscore-prefixed package is intentional because Binary Ninja loads the repository root as the `silvergun` plugin module. Native tools use the same descriptor shape; therefore the router and agent do not distinguish built-in versus extension-provided capability except for the mutation policy.
 
 ## Deliberate non-goals
 

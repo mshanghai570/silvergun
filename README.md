@@ -97,7 +97,7 @@ Silvergun is designed for interactive reverse engineering, not unattended binary
 
 ## Extending Silvergun
 
-The plugin exposes installed plugin commands through `silvergun.external.ExternalCommandIndex`, which yields `ExternalCapability` cards. Native tools and extension commands share the same routing interface. To add a specialized integration, create another adapter under `silvergun/adapters/` that supplies stable capability identifiers, compact descriptions, and an execution callback; the router and bounded agent need not change.
+The plugin exposes installed plugin commands through `_silvergun.external.ExternalCommandIndex`, which yields `ExternalCapability` cards. The underscore-prefixed package is intentional: Binary Ninja loads the repository root as the `silvergun` plugin module, so implementation modules must not reuse that top-level name. Native tools and extension commands share the same routing interface. To add a specialized integration, create another adapter under `_silvergun/adapters/` that supplies stable capability identifiers, compact descriptions, and an execution callback; the router and bounded agent need not change.
 
 The initial version keeps the extension boundary intentionally small. It does not load arbitrary Python modules, run shell commands, maintain a local server, or introduce an orchestration framework. This minimizes attack surface and prevents startup or context cost from growing with the plugin ecosystem.
 
@@ -106,7 +106,7 @@ The initial version keeps the extension boundary intentionally small. It does no
 The repository includes no third-party dependency and uses the standard-library `unittest` runner. The unit tests exercise provider model discovery, standard tool-call payload construction, and narrow routing without requiring a Binary Ninja installation.
 
 ```bash
-python3 -m compileall -q __init__.py silvergun tests
+python3 -m compileall -q __init__.py _silvergun tests
 python3 -m unittest discover -s tests -v
 ```
 
@@ -116,7 +116,7 @@ python3 -m unittest discover -s tests -v
 .
 ├── __init__.py                 # Binary Ninja menu and context-command registration
 ├── plugin.json                 # Plugin Manager metadata
-├── silvergun/
+├── _silvergun/                # Private implementation package; root silvergun module is the BN loader
 │   ├── config.py               # User settings, model cache, secret-provider key storage
 │   ├── client.py               # Standard-library OpenAI-compatible transport
 │   ├── router.py               # Deterministic capability router
