@@ -97,7 +97,7 @@ class ProviderDialog(QDialog):
         self._timer.timeout.connect(self._refresh)
         self._loader = _ModelLoader(self)
         self._loader.completed.connect(self._models_loaded)
-        self.base_url.textChanged.connect(self._schedule_refresh)
+        self.base_url.textChanged.connect(self._base_url_changed)
         self.key.textChanged.connect(self._mark_key_dirty_and_refresh)
         self.ca_bundle.textChanged.connect(self._schedule_refresh)
 
@@ -105,6 +105,12 @@ class ProviderDialog(QDialog):
         path, _ = QFileDialog.getOpenFileName(self, "Select PEM CA bundle")
         if path:
             self.ca_bundle.setText(path)
+
+    def _base_url_changed(self) -> None:
+        # A key is namespaced by base URL, so changing the endpoint must save the
+        # current key under the new endpoint when secret storage is available.
+        self._key_dirty = True
+        self._schedule_refresh()
 
     def _mark_key_dirty_and_refresh(self) -> None:
         self._key_dirty = True
@@ -141,11 +147,12 @@ class ProviderDialog(QDialog):
         set_provider(base_url, model, self.ca_bundle.text())
         set_cached_models(self.model.itemText(index) for index in range(self.model.count()))
         if self._key_dirty:
-            if not store_api_key(base_url, self.key.text()):
-                if self.key.text() and not has_secret_storage():
-                    self.status.setText("Provider settings were saved, but no Binary Ninja secret provider is available. The API key was not persisted.")
-                    return
-                self.status.setText("Provider settings were saved, but the API key could not be stored.")
+            key = self.key.text()
+            if key and not has_secret_storage():
+                self.status.setText("Provider settings were saved, but no Binary Ninja secret provider is available. The API key was not persisted; configure secret storage or leave the key blank.")
+                return
+            if has_secret_storage() and not store_api_key(base_url, key):
+                self.status.setText("Provider settings were saved, but the API key could not be stored. Check Binary Ninja secret-provider permissions.")
                 return
         self.accept()
 

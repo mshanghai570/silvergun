@@ -136,8 +136,11 @@ def store_api_key(base_url: str, value: str) -> bool:
         return False
     try:
         if value:
-            return bool(provider.store_data(_secret_key(base_url), value))
-        return bool(provider.delete_data(_secret_key(base_url)))
+            # Binary Ninja providers commonly return None on success.
+            result = provider.store_data(_secret_key(base_url), value)
+            return result is not False
+        result = provider.delete_data(_secret_key(base_url))
+        return result is not False
     except Exception:
         return False
 
