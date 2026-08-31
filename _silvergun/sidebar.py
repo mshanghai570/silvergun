@@ -17,13 +17,28 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, 
 from .commands import start_request
 
 
+def _view_from_frame(view_frame):
+    """Unwrap Binary Ninja's ViewFrame into the underlying BinaryView."""
+    if view_frame is None:
+        return None
+    try:
+        interface = view_frame.getCurrentViewInterface()
+        view = interface.getData() if interface is not None else None
+        if view is not None:
+            return view
+    except Exception:
+        pass
+    return view_frame if hasattr(view_frame, "get_function_containing") else None
+
+
 class SilvergunSidebarWidget(SidebarWidget):
     def __init__(self, name, frame, data):
         super().__init__(name)
         self._frame = frame
-        # Sidebar data can be a UI wrapper; the real BinaryView arrives via
-        # notifyViewChanged on current Binary Ninja builds.
-        self._bv = data if hasattr(data, "functions") else None
+        self._offset = None
+        # `data` is not consistently a BinaryView across Binary Ninja versions;
+        # notifyViewChanged supplies the authoritative ViewFrame-to-BinaryView handoff.
+        self._bv = data if hasattr(data, "get_function_containing") else None
         self._data = data
         self._status = QLabel("Ready. Ask a focused question about the current binary.")
         self._status.setWordWrap(True)
@@ -60,21 +75,28 @@ class SilvergunSidebarWidget(SidebarWidget):
         layout.addWidget(self._status)
         layout.addWidget(self._result, 1)
 
-    def notifyViewChanged(self, view):
-        """Receive the active BinaryView from Binary Ninja's sidebar host."""
-        self._bv = view
-        self._status.setText("Ready. Ask a focused question about the current binary.")
+    def notifyViewChanged(self, view_frame):
+        """Receive Binary Ninja's ViewFrame and unwrap its active BinaryView."""
+        self._frame = view_frame
+        self._bv = _view_from_frame(view_frame)
+        if self._bv is None:
+            self._status.setText("No active BinaryView is available.")
+        else:
+            self._status.setText("Ready. Ask a focused question about the current binary.")
+
+    def notifyOffsetChanged(self, offset):
+        """Track cursor movement without querying unsupported ViewFrame fields."""
+        self._offset = offset
 
     def _active_view(self):
         if self._bv is not None:
             return self._bv
-        return self._data if hasattr(self._data, "functions") else None
+        return self._data if hasattr(self._data, "get_function_containing") else None
 
     def _function(self):
         try:
             view = self._active_view()
-            offset = self._frame.getCurrentOffset()
-            return view.get_function_containing(offset) if view is not None else None
+            return view.get_function_containing(self._offset) if view is not None and self._offset is not None else None
         except Exception:
             return None
 
