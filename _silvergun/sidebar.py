@@ -12,7 +12,7 @@ except ImportError:
     SidebarWidgetLocation = None
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout
 
 from .commands import start_request
 from .external import ExternalCommandIndex
@@ -109,7 +109,7 @@ class SilvergunSidebarWidget(SidebarWidget):
 
         self._prompt = QPlainTextEdit()
         self._prompt.setPlaceholderText("Enter investigation directive…\nExamples: use BoolHunter to find purchase validation; investigate authentication flow")
-        self._prompt.setMinimumHeight(78)
+        self._prompt.setMinimumHeight(108)
         fire = QPushButton("FIRE")
         mark(fire, "fire")
         fire.clicked.connect(self._ask)
@@ -140,15 +140,35 @@ class SilvergunSidebarWidget(SidebarWidget):
         mark(result_label, "eyebrow")
         self._result = QPlainTextEdit()
         self._result.setReadOnly(True)
+        self._result.setMinimumHeight(240)
         self._result.setPlaceholderText("Analysis stream and tool results appear here.")
+
+        result_actions = QHBoxLayout()
+        continue_case = QPushButton("CONTINUE CASE")
+        continue_case.clicked.connect(self._continue_case)
+        review_evidence = QPushButton("REVIEW EVIDENCE")
+        review_evidence.clicked.connect(self._review_evidence)
+        clear_console = QPushButton("CLEAR CONSOLE")
+        clear_console.clicked.connect(self._clear_console)
+        result_actions.addWidget(continue_case)
+        result_actions.addWidget(review_evidence)
+        result_actions.addWidget(clear_console)
+
+        capability_scroll = QScrollArea()
+        capability_scroll.setWidgetResizable(True)
+        capability_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        capability_scroll.setMaximumHeight(190)
+        capability_scroll.setWidget(self._capability_panel)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(7)
         layout.addLayout(header)
         layout.addWidget(self._target_panel)
-        layout.addWidget(self._capability_panel)
         layout.addWidget(self._status)
+        console_label = QLabel("AGENT CONSOLE / NATURAL-LANGUAGE CONTROL")
+        mark(console_label, "eyebrow")
+        layout.addWidget(console_label)
         layout.addWidget(self._activity)
         layout.addWidget(self._prompt)
         layout.addLayout(command_row)
@@ -156,6 +176,11 @@ class SilvergunSidebarWidget(SidebarWidget):
         layout.addLayout(advanced)
         layout.addWidget(result_label)
         layout.addWidget(self._result, 1)
+        layout.addLayout(result_actions)
+        inventory_label = QLabel("CAPABILITY INVENTORY / STATUS")
+        mark(inventory_label, "eyebrow")
+        layout.addWidget(inventory_label)
+        layout.addWidget(capability_scroll)
         self._update_target()
 
     def _panel(self) -> QFrame:
@@ -277,9 +302,9 @@ class SilvergunSidebarWidget(SidebarWidget):
             return
         self._status.setText("SCANNING / ANALYZING / CAPABILITY STANDBY")
         self._engage_capability(request)
-        self._activity.setPlainText("[NOW] TARGET ACQUIRED\n[NOW] CAPABILITY ENGAGED\n[NOW] ANALYSIS IN PROGRESS…")
-        self._result.setPlainText("")
-        start_request(view, request, self._function(), self._completed)
+        self._activity.setPlainText("[NOW] TARGET ACQUIRED\n[NOW] CAPABILITY ROUTING\n[NOW] ANALYSIS IN PROGRESS…")
+        self._result.setPlainText("[STREAM] Silvergun is routing this request and gathering evidence…")
+        start_request(view, request, self._function(), self._completed, self._stream_update)
 
     def _ask(self) -> None:
         self._submit(self._prompt.toPlainText())
@@ -299,6 +324,18 @@ class SilvergunSidebarWidget(SidebarWidget):
     def _map(self) -> None:
         self._submit("Build a compact code map for the current function and explain the important caller/callee relationships with evidence.")
 
+    def _continue_case(self) -> None:
+        self._submit("Continue the investigation from the restored case file. Review unresolved questions and choose the highest-value next evidence to collect.")
+
+    def _review_evidence(self) -> None:
+        self._submit("Audit the latest investigation results. List every significant conclusion with its supporting function, address, xref, string, IL, search, or plugin evidence, and flag unsupported claims.")
+
+    def _clear_console(self) -> None:
+        self._prompt.clear()
+        self._activity.setPlainText("[NOW] CONSOLE CLEARED\n[NOW] AWAITING INVESTIGATION")
+        self._result.clear()
+        self._status.setText("SYSTEM READY / ENTER AN INVESTIGATION DIRECTIVE")
+
     def _configure(self) -> None:
         from .ui import ProviderDialog
         ProviderDialog(self).exec()
@@ -308,6 +345,16 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._status.setText("ANALYSIS FAILED / REVIEW TELEMETRY" if failed else "ANALYSIS COMPLETE / RESULTS LOCKED")
         self._activity.setPlainText("[NOW] CAPABILITY DISENGAGED\n[NOW] ANALYSIS COMPLETE" if not failed else "[NOW] PROVIDER FAULT\n[NOW] ANALYSIS ABORTED")
         self._result.setPlainText(markdown)
+
+    def _stream_update(self, message: str) -> None:
+        """Display bounded tool/model events while the background investigation runs."""
+        activity = self._activity.toPlainText().splitlines()
+        activity.extend(message.splitlines())
+        self._activity.setPlainText("\n".join(activity[-12:]))
+        current = self._result.toPlainText()
+        self._result.setPlainText((current + "\n\n[STREAM] " + message)[-16000:])
+        scrollbar = self._result.verticalScrollBar()
+        scrollbar.setValue(scrollbar.maximum())
 
 
 class SilvergunSidebarWidgetType(SidebarWidgetType):

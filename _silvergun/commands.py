@@ -79,19 +79,20 @@ def _start(bv, function, request: str) -> None:
     start_request(bv, request, function)
 
 
-def start_request(bv, request: str, function=None, on_complete: Callable[[str], None] | None = None) -> None:
-    AgentTask(bv, function, request, on_complete).start()
+def start_request(bv, request: str, function=None, on_complete: Callable[[str], None] | None = None, on_progress: Callable[[str], None] | None = None) -> None:
+    AgentTask(bv, function, request, on_complete, on_progress).start()
 
 
 class AgentTask(BackgroundTaskThread):
     """Moves network/model work off the UI while preserving explicit write confirmation."""
 
-    def __init__(self, bv, function, request: str, on_complete: Callable[[str], None] | None = None) -> None:
+    def __init__(self, bv, function, request: str, on_complete: Callable[[str], None] | None = None, on_progress: Callable[[str], None] | None = None) -> None:
         super().__init__("Silvergun: preparing compact context", True)
         self._bv = bv
         self._function = function
         self._request = request
         self._on_complete = on_complete
+        self._on_progress = on_progress
 
     def run(self) -> None:
         try:
@@ -101,7 +102,7 @@ class AgentTask(BackgroundTaskThread):
             native = NativeTools(self._bv, self._function, ExternalCommandIndex(), settings.max_context_chars)
             native.mark_progress("analysis", 0, settings.max_steps, self._request[:240])
             self.progress = "Silvergun: routing and analyzing"
-            result = LeanAgent(client, settings).run(self._request, native)
+            result = LeanAgent(client, settings, on_event=self._event).run(self._request, native)
             native.mark_progress("complete", result.rounds, settings.max_steps, f"Completed {result.intent} investigation.")
             self._report("Silvergun", f"# Silvergun\n\n**Intent:** `{result.intent}`  \n**Tool rounds:** `{result.rounds}`\n\n{result.answer}")
         except ProviderError as error:
@@ -118,3 +119,7 @@ class AgentTask(BackgroundTaskThread):
                 self._on_complete(markdown)
             show_markdown_report(self._bv, title, markdown, markdown)
         execute_on_main_thread(deliver)
+
+    def _event(self, message: str) -> None:
+        if self._on_progress is not None:
+            execute_on_main_thread(lambda: self._on_progress(message))

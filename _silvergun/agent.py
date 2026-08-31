@@ -43,13 +43,15 @@ class AgentResult:
 class LeanAgent:
     """A small agent loop with a hard tool-round budget and no planning model call."""
 
-    def __init__(self, client: OpenAICompatibleClient, settings) -> None:
+    def __init__(self, client: OpenAICompatibleClient, settings, on_event=None) -> None:
         self.client = client
         self.settings = settings
         self.router = CapabilityRouter()
+        self.on_event = on_event
 
     def run(self, request: str, native: NativeTools) -> AgentResult:
         route = self.router.route(request, native.capabilities)
+        self._emit(f"ROUTE / {route.intent.upper()} / {len(route.tools)} NATIVE TOOLS SELECTED")
         tools = native.definitions(route.tools)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
@@ -60,6 +62,7 @@ class LeanAgent:
             completion = self.client.chat(self.settings.model, messages, tools)
             if not completion.tool_calls:
                 answer = completion.content.strip() or "The model returned no answer."
+                self._emit(f"MODEL / FINAL RESPONSE / ROUND {round_number}")
                 return AgentResult(answer, route.intent, round_number)
             calls = [_normalized_tool_call(call, round_number, index) for index, call in enumerate(completion.tool_calls, start=1)]
             messages.append({"role": "assistant", "content": completion.content or "", "tool_calls": calls})
@@ -73,6 +76,7 @@ class LeanAgent:
                     else:
                         executed.add(signature)
                         result = self._execute(name, arguments, native)
+                    self._emit(f"TOOL / {name.upper()}\n{result[:900]}")
                 except (TypeError, ValueError, json.JSONDecodeError) as error:
                     # A single malformed provider tool call must not abort the
                     # entire user request. Return a concise correction so the
@@ -81,7 +85,12 @@ class LeanAgent:
                 messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
         final = self.client.chat(self.settings.model, messages, ())
         answer = final.content.strip() or "Tool budget reached. Review the collected tool results."
+        self._emit("MODEL / TOOL BUDGET REACHED / FINALIZING")
         return AgentResult(answer, route.intent, self.settings.max_steps)
+
+    def _emit(self, message: str) -> None:
+        if self.on_event is not None:
+            self.on_event(message)
 
     def _execute(self, name: str, arguments: dict[str, Any], native: NativeTools) -> str:
         try:
