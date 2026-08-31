@@ -1,4 +1,4 @@
-"""Silvergun SidebarWidget: a compact UI entry point for the bounded agent."""
+"""Silvergun SidebarWidget: a compact retro-industrial analysis console."""
 
 from __future__ import annotations
 
@@ -11,10 +11,13 @@ except ImportError:
     SidebarContextSensitivity = None
     SidebarWidgetLocation = None
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
+from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout
 
 from .commands import start_request
+from .external import ExternalCommandIndex
+from .theme import CONSOLE_STYLESHEET, mark
+from .tools import TOOL_SCHEMAS
 
 
 def _view_from_frame(view_frame):
@@ -34,59 +37,202 @@ def _view_from_frame(view_frame):
 class SilvergunSidebarWidget(SidebarWidget):
     def __init__(self, name, frame, data):
         super().__init__(name)
+        self.setObjectName("silvergunConsole")
+        self.setStyleSheet(CONSOLE_STYLESHEET)
         self._frame = frame
         self._offset = None
-        # `data` is not consistently a BinaryView across Binary Ninja versions;
-        # notifyViewChanged supplies the authoritative ViewFrame-to-BinaryView handoff.
         self._bv = data if hasattr(data, "get_function_containing") else None
         self._data = data
-        self._status = QLabel("Ready. Ask a focused question about the current binary.")
-        self._status.setWordWrap(True)
-        self._prompt = QPlainTextEdit()
-        self._prompt.setPlaceholderText("Ask Silvergun… e.g. explain this function or find unsafe input flows")
-        self._prompt.setMinimumHeight(84)
-        self._result = QPlainTextEdit()
-        self._result.setReadOnly(True)
-        self._result.setPlaceholderText("Results appear here while the analysis report is also available in a separate report view.")
+        self._capability_labels: list[QLabel] = []
 
-        ask = QPushButton("Ask")
-        ask.clicked.connect(self._ask)
-        explain = QPushButton("Explain current function")
+        logo = QLabel()
+        logo.setPixmap(self._icon_pixmap())
+        logo.setFixedSize(58, 58)
+        logo.setScaledContents(True)
+        title = QLabel("SILVERGUN")
+        mark(title, "display")
+        subtitle = QLabel("BINARY ANALYSIS WEAPON / REV 01")
+        mark(subtitle, "eyebrow")
+        header_text = QVBoxLayout()
+        header_text.setSpacing(2)
+        header_text.addWidget(title)
+        header_text.addWidget(subtitle)
+        header = QHBoxLayout()
+        header.setSpacing(10)
+        header.addWidget(logo)
+        header.addLayout(header_text, 1)
+        header.addStretch()
+
+        self._target_panel = self._panel()
+        target_layout = QGridLayout(self._target_panel)
+        target_layout.setContentsMargins(10, 8, 10, 8)
+        target_layout.setHorizontalSpacing(12)
+        target_layout.setVerticalSpacing(3)
+        eyebrow = QLabel("TARGET / BINARY CONTEXT")
+        mark(eyebrow, "eyebrow")
+        target_layout.addWidget(eyebrow, 0, 0, 1, 2)
+        self._target_binary = self._value_label("NO BINARY VIEW")
+        self._target_arch = self._value_label("—")
+        self._target_platform = self._value_label("—")
+        self._target_function = self._value_label("NO TARGET ACQUIRED")
+        self._target_address = self._value_label("—")
+        for row, label, value in ((1, "BINARY", self._target_binary), (2, "ARCH", self._target_arch), (3, "PLATFORM", self._target_platform), (4, "FUNCTION", self._target_function), (5, "ADDRESS", self._target_address)):
+            caption = QLabel(label)
+            mark(caption, "muted")
+            target_layout.addWidget(caption, row, 0)
+            target_layout.addWidget(value, row, 1)
+
+        self._capability_panel = self._panel()
+        capability_layout = QVBoxLayout(self._capability_panel)
+        capability_layout.setContentsMargins(10, 8, 10, 8)
+        capability_layout.setSpacing(2)
+        capability_heading = QLabel("SYSTEM CAPABILITIES")
+        mark(capability_heading, "eyebrow")
+        capability_layout.addWidget(capability_heading)
+        self._capability_layout = capability_layout
+        self._refresh_capabilities()
+
+        self._status = QLabel("SYSTEM READY / ACQUIRE A TARGET")
+        self._status.setWordWrap(True)
+        mark(self._status, "status")
+        self._activity = QPlainTextEdit()
+        self._activity.setReadOnly(True)
+        self._activity.setMaximumHeight(76)
+        self._activity.setPlaceholderText("Telemetry will appear here.")
+        self._activity.setPlainText("[00:00:00] CONSOLE ONLINE\n[00:00:00] AWAITING INVESTIGATION")
+
+        self._prompt = QPlainTextEdit()
+        self._prompt.setPlaceholderText("Enter investigation directive…\nExamples: use BoolHunter to find purchase validation; investigate authentication flow")
+        self._prompt.setMinimumHeight(78)
+        fire = QPushButton("FIRE")
+        mark(fire, "fire")
+        fire.clicked.connect(self._ask)
+        explain = QPushButton("EXPLAIN TARGET")
         explain.clicked.connect(self._explain)
-        security = QPushButton("Find vulnerabilities")
+        security = QPushButton("SCAN VULNERABILITIES")
         security.clicked.connect(self._security)
-        configure = QPushButton("Provider…")
+        configure = QPushButton("PROVIDER")
         configure.clicked.connect(self._configure)
-        row = QHBoxLayout()
-        row.addWidget(ask)
-        row.addWidget(configure)
+        command_row = QHBoxLayout()
+        command_row.addWidget(fire)
+        command_row.addWidget(configure)
         quick = QHBoxLayout()
         quick.addWidget(explain)
         quick.addWidget(security)
 
+        result_label = QLabel("INVESTIGATION OUTPUT")
+        mark(result_label, "eyebrow")
+        self._result = QPlainTextEdit()
+        self._result.setReadOnly(True)
+        self._result.setPlaceholderText("Analysis stream and tool results appear here.")
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
-        title = QLabel("Silvergun")
-        title.setStyleSheet("font-size: 16px; font-weight: 600;")
-        layout.addWidget(title)
-        layout.addWidget(self._prompt)
-        layout.addLayout(row)
-        layout.addLayout(quick)
+        layout.setSpacing(7)
+        layout.addLayout(header)
+        layout.addWidget(self._target_panel)
+        layout.addWidget(self._capability_panel)
         layout.addWidget(self._status)
+        layout.addWidget(self._activity)
+        layout.addWidget(self._prompt)
+        layout.addLayout(command_row)
+        layout.addLayout(quick)
+        layout.addWidget(result_label)
         layout.addWidget(self._result, 1)
+        self._update_target()
+
+    def _panel(self) -> QFrame:
+        panel = QFrame()
+        panel.setProperty("role", "panel")
+        return panel
+
+    @staticmethod
+    def _value_label(text: str) -> QLabel:
+        label = QLabel(text)
+        mark(label, "value")
+        label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        return label
+
+    def _icon_pixmap(self) -> QPixmap:
+        icon = QImage(str(Path(__file__).parent / "assets" / "silvergun_icon.png"))
+        if icon.isNull():
+            icon = QImage(56, 56, QImage.Format.Format_RGB32)
+            icon.fill(0)
+        return QPixmap.fromImage(icon).scaled(58, 58, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+
+    def _refresh_capabilities(self) -> None:
+        for label in self._capability_labels:
+            self._capability_layout.removeWidget(label)
+            label.deleteLater()
+        self._capability_labels.clear()
+        for tool_name, schema in TOOL_SCHEMAS.items():
+            function = schema.get("function", {})
+            label = tool_name.replace("_", " ").upper()
+            description = str(function.get("description", "Native analysis capability"))
+            self._add_capability(label, description, available=True)
+        view = self._active_view()
+        if view is not None:
+            try:
+                external = ExternalCommandIndex().refresh(view, self._function())
+                for capability in external:
+                    self._add_capability(capability.name.upper(), capability.description, available=True)
+            except Exception:
+                pass
+        if not self._capability_labels:
+            self._add_capability("NO CAPABILITIES", "Open a BinaryView to populate the instrument array.", available=False)
+
+    def _add_capability(self, name: str, description: str, *, available: bool) -> None:
+        label = QLabel(f"●  {name}\n   {description[:78]}")
+        label.setToolTip(description)
+        mark(label, "capability", available=available)
+        self._capability_layout.addWidget(label)
+        self._capability_labels.append(label)
+
+    def _engage_capability(self, request: str) -> None:
+        """Illuminate the best visible instrument for the active directive."""
+        normalized = request.lower()
+        matched = False
+        for label in self._capability_labels:
+            name = label.text().split("\n", 1)[0].replace("●", "").strip().lower()
+            active = name != "no capabilities" and any(token in normalized for token in name.split() if len(token) > 3)
+            label.setProperty("active", active)
+            label.style().unpolish(label)
+            label.style().polish(label)
+            matched = matched or active
+        if not matched and self._capability_labels:
+            self._capability_labels[0].setProperty("active", True)
+            self._capability_labels[0].style().unpolish(self._capability_labels[0])
+            self._capability_labels[0].style().polish(self._capability_labels[0])
+
+    def _update_target(self) -> None:
+        view = self._active_view()
+        if view is None:
+            self._target_binary.setText("NO BINARY VIEW")
+            self._target_arch.setText("—")
+            self._target_platform.setText("—")
+            self._target_function.setText("NO TARGET ACQUIRED")
+            self._target_address.setText("—")
+            return
+        filename = str(getattr(getattr(view, "file", None), "filename", "")) or "UNTITLED BINARY"
+        architecture = str(getattr(getattr(view, "arch", None), "name", "")) or "UNKNOWN ARCHITECTURE"
+        platform = str(getattr(getattr(view, "platform", None), "name", "")) or "UNKNOWN PLATFORM"
+        function = self._function()
+        self._target_binary.setText(Path(filename).name[:42])
+        self._target_arch.setText(architecture[:42])
+        self._target_platform.setText(platform[:42])
+        self._target_function.setText(str(getattr(function, "name", "NO TARGET ACQUIRED"))[:42])
+        self._target_address.setText(hex(function.start) if function is not None else "—")
 
     def notifyViewChanged(self, view_frame):
-        """Receive Binary Ninja's ViewFrame and unwrap its active BinaryView."""
         self._frame = view_frame
         self._bv = _view_from_frame(view_frame)
-        if self._bv is None:
-            self._status.setText("No active BinaryView is available.")
-        else:
-            self._status.setText("Ready. Ask a focused question about the current binary.")
+        self._update_target()
+        self._refresh_capabilities()
+        self._status.setText("TARGET ACQUIRED / SYSTEM READY" if self._bv is not None else "NO ACTIVE BINARY VIEW")
 
     def notifyOffsetChanged(self, offset):
-        """Track cursor movement without querying unsupported ViewFrame fields."""
         self._offset = offset
+        self._update_target()
 
     def _active_view(self):
         if self._bv is not None:
@@ -103,13 +249,15 @@ class SilvergunSidebarWidget(SidebarWidget):
     def _submit(self, request: str) -> None:
         request = request.strip()
         if not request:
-            self._status.setText("Enter a request first.")
+            self._status.setText("DIRECTIVE REQUIRED / ENTER A REQUEST")
             return
         view = self._active_view()
         if view is None:
-            self._status.setText("No active BinaryView is available. Open a binary in a Binary Ninja view first.")
+            self._status.setText("TARGET NOT ACQUIRED / OPEN A BINARY VIEW")
             return
-        self._status.setText("Silvergun is analyzing in the background…")
+        self._status.setText("SCANNING / ANALYZING / CAPABILITY STANDBY")
+        self._engage_capability(request)
+        self._activity.setPlainText("[NOW] TARGET ACQUIRED\n[NOW] CAPABILITY ENGAGED\n[NOW] ANALYSIS IN PROGRESS…")
         self._result.setPlainText("")
         start_request(view, request, self._function(), self._completed)
 
@@ -127,10 +275,9 @@ class SilvergunSidebarWidget(SidebarWidget):
         ProviderDialog(self).exec()
 
     def _completed(self, markdown: str) -> None:
-        if markdown.startswith("# Provider error") or markdown.startswith("# Silvergun error"):
-            self._status.setText("Analysis failed. See the error details below.")
-        else:
-            self._status.setText("Analysis complete.")
+        failed = markdown.startswith("# Provider error") or markdown.startswith("# Silvergun error")
+        self._status.setText("ANALYSIS FAILED / REVIEW TELEMETRY" if failed else "ANALYSIS COMPLETE / RESULTS LOCKED")
+        self._activity.setPlainText("[NOW] CAPABILITY DISENGAGED\n[NOW] ANALYSIS COMPLETE" if not failed else "[NOW] PROVIDER FAULT\n[NOW] ANALYSIS ABORTED")
         self._result.setPlainText(markdown)
 
 
@@ -139,7 +286,7 @@ class SilvergunSidebarWidgetType(SidebarWidgetType):
         icon_path = Path(__file__).parent / "assets" / "silvergun_icon.png"
         icon = QImage(str(icon_path))
         if icon.isNull():
-            icon = QImage(56, 56, QImage.Format_RGB32)
+            icon = QImage(56, 56, QImage.Format.Format_RGB32)
             icon.fill(0)
         SidebarWidgetType.__init__(self, icon, "Silvergun")
 

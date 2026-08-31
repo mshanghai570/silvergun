@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 
 from .client import OpenAICompatibleClient, ProviderError
 from .config import ProviderConfig, api_key, cached_models, config, has_secret_storage, set_cached_models, set_provider, store_api_key
+from .theme import CONSOLE_STYLESHEET, mark
 
 
 class _ModelLoader(QObject):
@@ -45,6 +46,8 @@ class ProviderDialog(QDialog):
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
+        self.setObjectName("silvergunProvider")
+        self.setStyleSheet(CONSOLE_STYLESHEET)
         current = config()
         self._token = 0
         self._key_dirty = False
@@ -65,23 +68,24 @@ class ProviderDialog(QDialog):
         self.model.addItems(cached_models())
         if current.model:
             self.model.setCurrentText(current.model)
-        self.status = QLabel("Edit the base URL or API key to load available models.")
+        self.status = QLabel("SYSTEM READY / EDIT ENDPOINT OR API KEY TO LOAD CAPABILITIES")
         self.status.setWordWrap(True)
-        refresh = QPushButton("Refresh models")
+        mark(self.status, "status")
+        refresh = QPushButton("SCAN MODELS")
         refresh.clicked.connect(self._schedule_refresh)
 
         form = QFormLayout()
-        form.addRow("Base URL", self.base_url)
-        form.addRow("API key", self.key)
+        form.addRow("PROVIDER ROOT", self.base_url)
+        form.addRow("ACCESS KEY", self.key)
         ca_row = QHBoxLayout()
         ca_row.addWidget(self.ca_bundle)
         ca_row.addWidget(browse_ca)
-        form.addRow("CA bundle", ca_row)
-        form.addRow("Model", self.model)
+        form.addRow("CA BUNDLE", ca_row)
+        form.addRow("MODEL TARGET", self.model)
         controls = QHBoxLayout()
         controls.addWidget(refresh)
         controls.addStretch(1)
-        form.addRow("Models", controls)
+        form.addRow("MODEL ARRAY", controls)
 
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._save)
@@ -118,12 +122,12 @@ class ProviderDialog(QDialog):
 
     def _schedule_refresh(self) -> None:
         if self.base_url.text().strip():
-            self.status.setText("Waiting briefly for more edits before loading models…")
+            self.status.setText("STANDBY / WAITING FOR ENDPOINT INPUT…")
             self._timer.start()
 
     def _refresh(self) -> None:
         self._token += 1
-        self.status.setText("Loading models…")
+        self.status.setText("SCANNING / LOADING MODEL ARRAY…")
         self._loader.load(self._token, self.base_url.text(), self.key.text(), self.ca_bundle.text())
 
     def _models_loaded(self, token: int, models: list, message: str) -> None:
@@ -136,7 +140,7 @@ class ProviderDialog(QDialog):
             self.model.addItems(models)
             self.model.setCurrentText(chosen if chosen in models else models[0])
             self.model.blockSignals(False)
-        self.status.setText(message)
+        self.status.setText(("CAPABILITIES ACQUIRED / " if models else "SCAN FAILED / ") + message.upper())
 
     def _save(self) -> None:
         base_url = self.base_url.text().strip().rstrip("/")
