@@ -284,6 +284,15 @@ class NativeTools:
         notebook = AnalysisNotebook(filename)
         return json.dumps({"summary": notebook.summary(), "recent": notebook.search("", 8)}, separators=(",", ":"))
 
+    @_main_thread
+    def notebook_context(self) -> str:
+        """Return restored local case context without requiring a model tool call."""
+        return self._notebook_context({})
+
+    @_main_thread
+    def mark_progress(self, phase: str, completed: int = 0, total: int = 0, note: str = "") -> str:
+        return self._notebook_progress({"phase": phase, "completed": completed, "total": total, "note": note})
+
     def _notebook_search(self, args: dict[str, Any]) -> str:
         filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
         notebook = AnalysisNotebook(filename)

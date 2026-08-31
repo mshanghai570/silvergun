@@ -53,7 +53,7 @@ class LeanAgent:
         tools = native.definitions(route.tools)
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": self._request_message(request, route, native.context_hint())},
+            {"role": "user", "content": self._request_message(request, route, native.context_hint(), native.notebook_context())},
         ]
         executed: set[str] = set()
         for round_number in range(1, self.settings.max_steps + 1):
@@ -124,13 +124,14 @@ class LeanAgent:
         return completion.content.strip() or "No review returned."
 
     @staticmethod
-    def _request_message(request: str, route: Route, context_hint: str) -> str:
+    def _request_message(request: str, route: Route, context_hint: str, notebook_context: str = "") -> str:
         extension_section = ""
         if route.external:
             cards = "\n".join(capability.card() for capability in route.external)
             extension_section = f"\n\nRelevant installed-plugin capabilities:\n{cards}"
         guidance = ROUTE_GUIDANCE.get(route.intent, "Gather the smallest relevant evidence before answering and state uncertainty explicitly.")
-        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.\nOperational directive: {guidance}{extension_section}"
+        case_section = f"\n\nRestored local case-file context (treat as leads and re-verify):\n{notebook_context}" if notebook_context and not notebook_context.startswith("No notebook") else ""
+        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.\nOperational directive: {guidance}{case_section}{extension_section}"
 
 
 def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:

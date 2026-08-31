@@ -99,8 +99,10 @@ class AgentTask(BackgroundTaskThread):
             self.progress = "Silvergun: contacting provider"
             client = OpenAICompatibleClient(settings, api_key(settings.normalized_base_url))
             native = NativeTools(self._bv, self._function, ExternalCommandIndex(), settings.max_context_chars)
+            native.mark_progress("analysis", 0, settings.max_steps, self._request[:240])
             self.progress = "Silvergun: routing and analyzing"
             result = LeanAgent(client, settings).run(self._request, native)
+            native.mark_progress("complete", result.rounds, settings.max_steps, f"Completed {result.intent} investigation.")
             self._report("Silvergun", f"# Silvergun\n\n**Intent:** `{result.intent}`  \n**Tool rounds:** `{result.rounds}`\n\n{result.answer}")
         except ProviderError as error:
             self._report("Silvergun — Provider Error", f"# Provider error\n\n{error}\n\nUse **Silvergun → Configure Provider...** to verify the endpoint, API key, and model.")
