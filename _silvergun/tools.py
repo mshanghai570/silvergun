@@ -65,8 +65,10 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "query_binary": _function_schema("query_binary", "Run a bounded local BNQL-style query: name~text, calls:text, has:text, or addr:0xADDRESS.", {"query": {"type": "string"}}, ["query"]),
     "get_verification": _function_schema("get_verification", "Separate host-proven facts from model inferences and attach source locators to the selected function.", {"address": {"type": "string", "description": "Optional hexadecimal function address."}}),
     "code_map": _function_schema("code_map", "Build a compact caller/callee relationship map for visual navigation.", {"address": {"type": "string"}, "depth": {"type": "integer", "minimum": 1, "maximum": 3}}, ["address"]),
-    "notebook_context": _function_schema("notebook_context", "Load the latest local findings recorded for this binary.", {}),
-    "notebook_record": _function_schema("notebook_record", "Record a finding locally for future investigations; never writes to the binary.", {"title": {"type": "string"}, "note": {"type": "string"}, "address": {"type": "string"}, "evidence": {"type": "array", "items": {"type": "string"}}, "confidence": {"type": "string", "enum": ["proven", "inferred", "hypothesis"]}}, ["title", "note", "evidence"]),
+    "notebook_context": _function_schema("notebook_context", "Load the latest local findings, counts, and analysis progress for this binary.", {}),
+    "notebook_search": _function_schema("notebook_search", "Search local notebook records for a term or address.", {"query": {"type": "string"}, "limit": {"type": "integer", "minimum": 1, "maximum": 50}}, ["query"]),
+    "notebook_progress": _function_schema("notebook_progress", "Record or update local analysis progress for this binary.", {"phase": {"type": "string"}, "completed": {"type": "integer", "minimum": 0}, "total": {"type": "integer", "minimum": 0}, "note": {"type": "string"}}, ["phase"]),
+    "notebook_record": _function_schema("notebook_record", "Record a structured finding locally for future investigations; never writes to the binary.", {"title": {"type": "string"}, "note": {"type": "string"}, "address": {"type": "string"}, "kind": {"type": "string", "enum": ["finding", "hypothesis", "question", "function", "tool_result"]}, "status": {"type": "string", "enum": ["open", "resolved", "blocked", "active"]}, "evidence": {"type": "array", "items": {"type": "object"}}, "related_functions": {"type": "array", "items": {"type": "string"}}, "xrefs": {"type": "array", "items": {"type": "string"}}, "strings": {"type": "array", "items": {"type": "string"}}, "il_refs": {"type": "array", "items": {"type": "string"}}, "search_refs": {"type": "array", "items": {"type": "string"}}, "plugin_results": {"type": "array", "items": {"type": "string"}}, "confidence": {"type": "string", "enum": ["proven", "inferred", "hypothesis"]}}, ["title", "note", "evidence"]),
     "fanout_investigate": _function_schema("fanout_investigate", "Request independent read-only reviews of several functions. The execution layer snapshots first, then runs bounded remote work in parallel.", {"addresses": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8}, "focus": {"type": "string", "description": "Question each review should answer."}}, ["addresses", "focus"]),
     "search_capabilities": _function_schema("search_capabilities", "Search the compact index of compatible installed Binary Ninja plugin commands.", {"query": {"type": "string"}}, ["query"]),
     "invoke_external_command": _function_schema("invoke_external_command", "Invoke a capability from another installed Binary Ninja plugin. Always requires user approval.", {"capability_id": {"type": "string"}}, ["capability_id"]),
@@ -129,6 +131,8 @@ class NativeTools:
             "get_verification": self._verification,
             "code_map": self._code_map,
             "notebook_context": self._notebook_context,
+            "notebook_search": self._notebook_search,
+            "notebook_progress": self._notebook_progress,
             "notebook_record": self._notebook_record,
             "search_capabilities": self._search_capabilities,
             "invoke_external_command": self._invoke_external,
@@ -277,13 +281,25 @@ class NativeTools:
 
     def _notebook_context(self, _args: dict[str, Any]) -> str:
         filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
-        return AnalysisNotebook(filename).compact_context()
+        notebook = AnalysisNotebook(filename)
+        return json.dumps({"summary": notebook.summary(), "recent": notebook.search("", 8)}, separators=(",", ":"))
+
+    def _notebook_search(self, args: dict[str, Any]) -> str:
+        filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
+        notebook = AnalysisNotebook(filename)
+        return json.dumps({"query": str(args.get("query", "")), "matches": notebook.search(str(args.get("query", "")), int(args.get("limit", 20)))}, separators=(",", ":"))
+
+    def _notebook_progress(self, args: dict[str, Any]) -> str:
+        filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
+        notebook = AnalysisNotebook(filename)
+        progress = notebook.set_progress(str(args.get("phase", "active")), int(args.get("completed", 0)), int(args.get("total", 0)), str(args.get("note", "")))
+        return json.dumps({"progress": progress, "summary": notebook.summary()}, separators=(",", ":"))
 
     def _notebook_record(self, args: dict[str, Any]) -> str:
         filename = str(getattr(getattr(self.bv, "file", None), "filename", ""))
-        evidence = tuple(str(item) for item in args.get("evidence", []) if item)
-        record = AnalysisNotebook(filename).add(Finding(str(args.get("title", "Untitled finding")), str(args.get("note", "")), str(args.get("address", "")), evidence, str(args.get("confidence", "inferred"))))
-        return json.dumps({"recorded": record, "path": str(AnalysisNotebook(filename).path), "note": "Local notebook only; binary unchanged."}, separators=(",", ":"))
+        evidence = tuple(item if isinstance(item, dict) else {"kind": "unspecified", "locator": str(item)} for item in args.get("evidence", []) if item)
+        record = AnalysisNotebook(filename).add(Finding(str(args.get("title", "Untitled finding")), str(args.get("note", "")), str(args.get("address", "")), evidence, str(args.get("confidence", "inferred")), str(args.get("kind", "finding")), str(args.get("status", "open")), tuple(str(item) for item in args.get("related_functions", [])), tuple(str(item) for item in args.get("xrefs", [])), tuple(str(item) for item in args.get("strings", [])), tuple(str(item) for item in args.get("il_refs", [])), tuple(str(item) for item in args.get("search_refs", [])), tuple(str(item) for item in args.get("plugin_results", []))))
+        return json.dumps({"recorded": record, "summary": AnalysisNotebook(filename).summary(), "note": "Local notebook only; binary unchanged."}, separators=(",", ":"))
 
     @staticmethod
     def _il_text(function) -> str:

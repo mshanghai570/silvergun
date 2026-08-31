@@ -16,6 +16,7 @@ from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTe
 
 from .commands import start_request
 from .external import ExternalCommandIndex
+from .notebook import AnalysisNotebook
 from .theme import CONSOLE_STYLESHEET, mark
 from .tools import TOOL_SCHEMAS
 
@@ -81,6 +82,11 @@ class SilvergunSidebarWidget(SidebarWidget):
             mark(caption, "muted")
             target_layout.addWidget(caption, row, 0)
             target_layout.addWidget(value, row, 1)
+        case_caption = QLabel("CASE FILE")
+        mark(case_caption, "muted")
+        self._case_status = self._value_label("STANDBY")
+        target_layout.addWidget(case_caption, 6, 0)
+        target_layout.addWidget(self._case_status, 6, 1)
 
         self._capability_panel = self._panel()
         capability_layout = QVBoxLayout(self._capability_panel)
@@ -223,6 +229,7 @@ class SilvergunSidebarWidget(SidebarWidget):
             self._target_platform.setText("—")
             self._target_function.setText("NO TARGET ACQUIRED")
             self._target_address.setText("—")
+            self._case_status.setText("STANDBY")
             return
         filename = str(getattr(getattr(view, "file", None), "filename", "")) or "UNTITLED BINARY"
         architecture = str(getattr(getattr(view, "arch", None), "name", "")) or "UNKNOWN ARCHITECTURE"
@@ -233,6 +240,8 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._target_platform.setText(platform[:42])
         self._target_function.setText(str(getattr(function, "name", "NO TARGET ACQUIRED"))[:42])
         self._target_address.setText(hex(function.start) if function is not None else "—")
+        case = AnalysisNotebook(filename).summary()
+        self._case_status.setText(f"{case['entries']} RECORDS / {case['kinds'].get('finding', 0)} FINDINGS")
 
     def notifyViewChanged(self, view_frame):
         self._frame = view_frame
