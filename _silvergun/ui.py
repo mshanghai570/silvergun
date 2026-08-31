@@ -144,16 +144,20 @@ class ProviderDialog(QDialog):
         if not base_url or not model:
             self.status.setText("Both a base URL and a model are required.")
             return
-        set_provider(base_url, model, self.ca_bundle.text())
-        set_cached_models(self.model.itemText(index) for index in range(self.model.count()))
-        if self._key_dirty:
-            key = self.key.text()
-            if key and not has_secret_storage():
-                self.status.setText("Provider settings were saved, but no Binary Ninja secret provider is available. The API key was not persisted; configure secret storage or leave the key blank.")
-                return
-            if has_secret_storage() and not store_api_key(base_url, key):
-                self.status.setText("Provider settings were saved, but the API key could not be stored. Check Binary Ninja secret-provider permissions.")
-                return
+        try:
+            set_provider(base_url, model, self.ca_bundle.text())
+            set_cached_models(self.model.itemText(index) for index in range(self.model.count()))
+            if self._key_dirty:
+                key = self.key.text()
+                if key and not has_secret_storage():
+                    self.status.setText("Provider settings were saved, but no Binary Ninja secret provider is available. The API key was not persisted; configure secret storage or leave the key blank.")
+                    return
+                if has_secret_storage() and not store_api_key(base_url, key):
+                    self.status.setText("Provider settings were saved, but the API key could not be stored. Check Binary Ninja secret-provider permissions.")
+                    return
+        except Exception as error:
+            self.status.setText(f"Could not save provider settings: {type(error).__name__}: {error}")
+            return
         self.accept()
 
 

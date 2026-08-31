@@ -77,10 +77,19 @@ def config() -> ProviderConfig:
     )
 
 
+def _set_user_string(key: str, value: str) -> None:
+    """Write a user setting across Binary Ninja Settings API signatures."""
+    try:
+        SETTINGS.set_string(key, value, SettingsScope.SettingsUserScope)
+    except TypeError:
+        # Older hosts expose set_string(key, value) and use the default user scope.
+        SETTINGS.set_string(key, value)
+
+
 def set_provider(base_url: str, model: str, ca_bundle: str = "") -> None:
-    SETTINGS.set_string(f"{PREFIX}.baseUrl", base_url.strip().rstrip("/"), SettingsScope.SettingsUserScope)
-    SETTINGS.set_string(f"{PREFIX}.model", model.strip(), SettingsScope.SettingsUserScope)
-    SETTINGS.set_string(f"{PREFIX}.caBundle", ca_bundle.strip(), SettingsScope.SettingsUserScope)
+    _set_user_string(f"{PREFIX}.baseUrl", base_url.strip().rstrip("/"))
+    _set_user_string(f"{PREFIX}.model", model.strip())
+    _set_user_string(f"{PREFIX}.caBundle", ca_bundle.strip())
 
 
 def cached_models() -> list[str]:
@@ -94,7 +103,7 @@ def cached_models() -> list[str]:
 
 def set_cached_models(models: Iterable[str]) -> None:
     unique = sorted(set(str(model) for model in models if model))
-    SETTINGS.set_string(f"{PREFIX}.modelCache", json.dumps(unique), SettingsScope.SettingsUserScope)
+    _set_user_string(f"{PREFIX}.modelCache", json.dumps(unique))
 
 
 def available_secret_providers() -> list[str]:

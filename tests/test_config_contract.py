@@ -35,6 +35,14 @@ class FakeSettings:
         self.values[key] = value
 
 
+class LegacySettings:
+    def __init__(self):
+        self.values = {}
+
+    def set_string(self, key, value):
+        self.values[key] = value
+
+
 class FakeProvider:
     name = "test"
 
@@ -72,6 +80,15 @@ from _silvergun import config
 class ConfigTests(unittest.TestCase):
     def test_none_secret_provider_result_is_success(self):
         self.assertTrue(config.store_api_key("https://provider.test/v1", "key"))
+
+    def test_legacy_settings_write_signature_is_supported(self):
+        original = config.SETTINGS
+        config.SETTINGS = LegacySettings()
+        try:
+            config.set_provider("https://legacy.test/v1/", "model-b")
+            self.assertEqual(config.SETTINGS.values["silvergun.model"], "model-b")
+        finally:
+            config.SETTINGS = original
 
     def test_user_settings_are_normalized(self):
         config.set_provider("https://provider.test/v1/", "model-a", "/tmp/ca.pem")
