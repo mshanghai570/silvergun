@@ -1,0 +1,27 @@
+{
+  "pluginmetadataversion": 2,
+  "name": "Lean Ninja",
+  "type": ["ui"],
+  "api": ["python3"],
+  "description": "Lean OpenAI-compatible AI coding partner with dynamic tool routing.",
+  "longdescription": "",
+  "license": {
+    "name": "MIT",
+    "text": "MIT"
+  },
+  "platforms": ["Windows", "Linux", "Darwin"],
+  "installinstructions": {
+    "Windows": "Install from the Plugin Manager or copy this repository into your user plugins directory.",
+    "Linux": "Install from the Plugin Manager or copy this repository into your user plugins directory.",
+    "Darwin": "Install from the Plugin Manager or copy this repository into your user plugins directory."
+  },
+  "dependencies": {
+    "pip": [],
+    "apt": [],
+    "installers": [],
+    "other": []
+  },
+  "version": "0.1.0",
+  "author": "MShin13",
+  "minimumbinaryninjaversion": 5100
+}
