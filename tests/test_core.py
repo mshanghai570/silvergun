@@ -38,11 +38,21 @@ class ProviderHandler(BaseHTTPRequestHandler):
             return
         ProviderHandler.last_authorization = self.headers.get("Authorization", "")
         ProviderHandler.last_body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        if ProviderHandler.last_body["model"] == "provider-alias":
+            if "max_tokens" in ProviderHandler.last_body:
+                self._json({"error": {"message": "Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead."}}, status=400)
+                return
+            if "temperature" in ProviderHandler.last_body:
+                self._json({"error": {"message": "Unsupported parameter: 'temperature' is not supported with this model."}}, status=400)
+                return
+        if ProviderHandler.last_body["model"] == "legacy-gpt-5" and "max_completion_tokens" in ProviderHandler.last_body:
+            self._json({"error": {"message": "Unsupported parameter: 'max_completion_tokens' is not supported by this gateway."}}, status=400)
+            return
         self._json({"choices": [{"finish_reason": "tool_calls", "message": {"content": "", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "get_function_context", "arguments": "{}"}}]}}]})
 
-    def _json(self, value):
+    def _json(self, value, status=200):
         body = json.dumps(value).encode()
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
@@ -79,6 +89,27 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(completion.tool_calls[0]["function"]["name"], "get_function_context")
         self.assertEqual(ProviderHandler.last_authorization, "Bearer test-key")
         self.assertEqual(ProviderHandler.last_body["tool_choice"], "auto")
+
+    def test_modern_openai_models_use_supported_parameters(self):
+        client = OpenAICompatibleClient(Settings(self.base_url), "test-key")
+        client.chat("gpt-5-mini", [{"role": "user", "content": "hi"}])
+        self.assertEqual(ProviderHandler.last_body["max_completion_tokens"], 1400)
+        self.assertNotIn("max_tokens", ProviderHandler.last_body)
+        self.assertNotIn("temperature", ProviderHandler.last_body)
+
+    def test_provider_alias_recovers_from_parameter_rejections(self):
+        client = OpenAICompatibleClient(Settings(self.base_url), "test-key")
+        client.chat("provider-alias", [{"role": "user", "content": "hi"}])
+        self.assertEqual(ProviderHandler.last_body["max_completion_tokens"], 1400)
+        self.assertNotIn("max_tokens", ProviderHandler.last_body)
+        self.assertNotIn("temperature", ProviderHandler.last_body)
+
+    def test_legacy_gateway_can_use_a_modern_model_alias(self):
+        client = OpenAICompatibleClient(Settings(self.base_url), "test-key")
+        client.chat("legacy-gpt-5", [{"role": "user", "content": "hi"}])
+        self.assertEqual(ProviderHandler.last_body["max_tokens"], 1400)
+        self.assertEqual(ProviderHandler.last_body["temperature"], 0.1)
+        self.assertNotIn("max_completion_tokens", ProviderHandler.last_body)
 
 
 class RouterTests(unittest.TestCase):

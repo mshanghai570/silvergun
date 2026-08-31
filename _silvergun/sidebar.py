@@ -127,7 +127,10 @@ class SilvergunSidebarWidget(SidebarWidget):
         ProviderDialog(self).exec()
 
     def _completed(self, markdown: str) -> None:
-        self._status.setText("Analysis complete.")
+        if markdown.startswith("# Provider error") or markdown.startswith("# Silvergun error"):
+            self._status.setText("Analysis failed. See the error details below.")
+        else:
+            self._status.setText("Analysis complete.")
         self._result.setPlainText(markdown)
 
 

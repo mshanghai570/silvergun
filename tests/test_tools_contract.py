@@ -39,6 +39,8 @@ def install_binaryninja_stub():
 
 
 install_binaryninja_stub()
+from _silvergun import tools as tools_module
+from _silvergun.agent import LeanAgent
 from _silvergun.external import ExternalCommandIndex
 from _silvergun.tools import NativeTools
 
@@ -106,6 +108,41 @@ class NativeToolsTests(unittest.TestCase):
         self.assertEqual(payload["address"], "0x401000")
         self.assertIn("puts", payload["hlil"])
         self.assertEqual(payload["parameters_and_locals"], ["arg1: char *"])
+
+    def test_host_reads_are_marshaled_from_agent_thread(self):
+        original_is_main_thread = tools_module.is_main_thread
+        original_execute = tools_module.execute_on_main_thread_and_wait
+        dispatches = []
+        tools_module.is_main_thread = lambda: False
+        tools_module.execute_on_main_thread_and_wait = lambda callback: dispatches.append(callback) or callback()
+        try:
+            native = NativeTools(self.view, self.view.functions[0], ExternalCommandIndex(), 4000)
+            native.context_hint()
+            native.execute("get_function_context", {})
+            native.snapshots(["0x401000"])
+        finally:
+            tools_module.is_main_thread = original_is_main_thread
+            tools_module.execute_on_main_thread_and_wait = original_execute
+        self.assertGreaterEqual(len(dispatches), 4)
+
+    def test_malformed_tool_call_does_not_abort_the_agent(self):
+        class Settings:
+            max_steps = 2
+            parallel_jobs = 1
+            model = "test-model"
+
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, _model, _messages, _tools, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    return type("Completion", (), {"content": "", "tool_calls": ({"id": "bad_1", "function": {"name": "get_function_context", "arguments": "not-json"}},)})()
+                return type("Completion", (), {"content": "Recovered after malformed tool call.", "tool_calls": ()})()
+
+        result = LeanAgent(Client(), Settings()).run("Explain this function", self.tools)
+        self.assertEqual(result.answer, "Recovered after malformed tool call.")
 
     def test_patch_never_writes_when_approval_is_declined(self):
         result = self.tools.execute("apply_patch", {"address": "0x401000", "bytes_hex": "90 90", "reason": "test"})

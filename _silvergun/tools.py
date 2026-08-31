@@ -23,16 +23,23 @@ MAX_ITEMS = 64
 MAX_IL_LINES = 180
 
 
+def _on_main_thread(callback: Callable[[], Any]) -> Any:
+    """Run all Binary Ninja API work on the host thread and return its result."""
+    if is_main_thread():
+        return callback()
+    result: dict[str, Any] = {}
+
+    def invoke() -> None:
+        result["value"] = callback()
+
+    execute_on_main_thread_and_wait(invoke)
+    return result.get("value")
+
+
 def _main_thread(func):
-    """Run UI and mutation work on the host UI thread, returning its value."""
+    """Marshal a Binary Ninja API operation to the host UI thread."""
     def wrapper(*args, **kwargs):
-        if is_main_thread():
-            return func(*args, **kwargs)
-        result = {}
-        def invoke():
-            result["value"] = func(*args, **kwargs)
-        execute_on_main_thread_and_wait(invoke)
-        return result.get("value")
+        return _on_main_thread(lambda: func(*args, **kwargs))
     return wrapper
 
 
@@ -71,11 +78,14 @@ class NativeTools:
         self.function = function
         self.external = external
         self.max_context_chars = max(4000, max_context_chars)
-        self.capabilities: list[ExternalCapability] = external.refresh(bv, function)
+        # AgentTask runs on a BackgroundTaskThread. Plugin-command discovery and
+        # every BinaryView access must be marshalled to Binary Ninja's API thread.
+        self.capabilities: list[ExternalCapability] = _on_main_thread(lambda: external.refresh(bv, function))
 
     def definitions(self, names: tuple[str, ...]) -> list[dict[str, Any]]:
         return [TOOL_SCHEMAS[name] for name in names if name in TOOL_SCHEMAS]
 
+    @_main_thread
     def context_hint(self) -> str:
         """Return small host metadata that prevents the model treating BN as detached."""
         filename = ""
@@ -98,6 +108,7 @@ class NativeTools:
         }
         return json.dumps(payload, separators=(",", ":"))
 
+    @_main_thread
     def execute(self, name: str, arguments: dict[str, Any]) -> str:
         actions: dict[str, Callable[[dict[str, Any]], str]] = {
             "get_function_context": self._context,
@@ -116,6 +127,7 @@ class NativeTools:
             raise KeyError(f"Unknown or agent-managed tool: {name}")
         return _cap(actions[name](arguments), self.max_context_chars)
 
+    @_main_thread
     def snapshots(self, addresses: list[str]) -> list[dict[str, Any]]:
         """Build immutable snapshots on the Binary Ninja side before remote fan-out."""
         unique: list[int] = []

@@ -49,16 +49,23 @@ class LeanAgent:
             if not completion.tool_calls:
                 answer = completion.content.strip() or "The model returned no answer."
                 return AgentResult(answer, route.intent, round_number)
-            messages.append({"role": "assistant", "content": completion.content or "", "tool_calls": list(completion.tool_calls)})
-            for call in completion.tool_calls[:6]:
-                name, arguments = _tool_call(call)
-                call_id = str(call.get("id", "call_missing_id"))
-                signature = f"{name}:{json.dumps(arguments, sort_keys=True, separators=(',', ':'))}"
-                if signature in executed:
-                    result = "Skipped duplicate tool call. Use the previous result."
-                else:
-                    executed.add(signature)
-                    result = self._execute(name, arguments, native)
+            calls = [_normalized_tool_call(call, round_number, index) for index, call in enumerate(completion.tool_calls, start=1)]
+            messages.append({"role": "assistant", "content": completion.content or "", "tool_calls": calls})
+            for call in calls[:6]:
+                call_id = str(call["id"])
+                try:
+                    name, arguments = _tool_call(call)
+                    signature = f"{name}:{json.dumps(arguments, sort_keys=True, separators=(',', ':'))}"
+                    if signature in executed:
+                        result = "Skipped duplicate tool call. Use the previous result."
+                    else:
+                        executed.add(signature)
+                        result = self._execute(name, arguments, native)
+                except (TypeError, ValueError, json.JSONDecodeError) as error:
+                    # A single malformed provider tool call must not abort the
+                    # entire user request. Return a concise correction so the
+                    # model can continue with a valid call or a direct answer.
+                    result = f"Tool request rejected: {error}. Continue with a valid tool call or answer directly."
                 messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
         final = self.client.chat(self.settings.model, messages, ())
         answer = final.content.strip() or "Tool budget reached. Review the collected tool results."
@@ -125,3 +132,10 @@ def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     if not isinstance(arguments, dict):
         raise ValueError("tool arguments must be an object")
     return name, arguments
+
+
+def _normalized_tool_call(call: dict[str, Any], round_number: int, index: int) -> dict[str, Any]:
+    """Give incomplete compatible-provider calls a transcript-safe identifier."""
+    normalized = dict(call)
+    normalized["id"] = str(call.get("id") or f"call_{round_number}_{index}")
+    return normalized

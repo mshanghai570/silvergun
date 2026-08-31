@@ -12,6 +12,8 @@ from urllib.request import Request, urlopen
 
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MODERN_OPENAI_REASONING_PREFIXES = ("gpt-5", "o1", "o3", "o4")
+MAX_COMPATIBILITY_RETRIES = 3
 
 
 class ProviderSettings(Protocol):
@@ -65,15 +67,20 @@ class OpenAICompatibleClient:
         body: dict[str, Any] = {
             "model": model,
             "messages": list(messages),
-            "temperature": 0.1,
-            "max_tokens": max_tokens,
             "stream": False,
         }
+        if _uses_completion_token_limit(model):
+            # GPT-5 and OpenAI reasoning models reject the legacy max_tokens
+            # field and only accept their default temperature.
+            body["max_completion_tokens"] = max_tokens
+        else:
+            body["temperature"] = 0.1
+            body["max_tokens"] = max_tokens
         compact_tools = list(tools)
         if compact_tools:
             body["tools"] = compact_tools
             body["tool_choice"] = "auto"
-        payload = self._request("POST", "/chat/completions", body)
+        payload = self._chat_request(body, max_tokens)
         try:
             choice = payload["choices"][0]
             message = choice["message"]
@@ -83,6 +90,23 @@ class OpenAICompatibleClient:
         calls = message.get("tool_calls", []) if isinstance(message, dict) else []
         tool_calls = tuple(call for call in calls if isinstance(call, dict)) if isinstance(calls, list) else ()
         return ChatCompletion(content, tool_calls, choice.get("finish_reason"), payload)
+
+    def _chat_request(self, body: dict[str, Any], max_tokens: int) -> dict[str, Any]:
+        """Retry only documented parameter incompatibilities from compatible APIs.
+
+        Some gateways expose an OpenAI reasoning model through a deployment alias,
+        so its name cannot be used to choose the right request shape in advance.
+        Adapt only after an explicit unsupported-parameter response; authentication,
+        quota, model, and ordinary provider errors still surface immediately.
+        """
+        for _attempt in range(MAX_COMPATIBILITY_RETRIES):
+            try:
+                return self._request("POST", "/chat/completions", body)
+            except ProviderError as error:
+                if not _apply_chat_compatibility_fix(body, max_tokens, str(error)):
+                    raise
+        # Every retry changes the payload, so reaching this branch is defensive.
+        return self._request("POST", "/chat/completions", body)
 
     def _request(self, method: str, path: str, body: Mapping[str, Any] | None = None) -> dict[str, Any]:
         headers = {"Accept": "application/json", "User-Agent": "Silvergun/0.1"}
@@ -149,6 +173,33 @@ def _text_content(content: Any) -> str:
             item.get("text", "") for item in content if isinstance(item, dict) and isinstance(item.get("text"), str)
         )
     return ""
+
+
+def _uses_completion_token_limit(model: str) -> bool:
+    """Identify OpenAI models that reject max_tokens and non-default temperature."""
+    normalized = model.strip().lower()
+    return normalized.startswith(MODERN_OPENAI_REASONING_PREFIXES)
+
+
+def _apply_chat_compatibility_fix(body: dict[str, Any], max_tokens: int, detail: str) -> bool:
+    """Apply one safe, provider-directed Chat Completions compatibility change."""
+    normalized = detail.lower()
+    unsupported = "unsupported" in normalized or "not supported" in normalized or "does not support" in normalized
+    if unsupported and "max_completion_tokens" in normalized and "max_completion_tokens" in body:
+        # A non-OpenAI gateway may expose a modern model name while retaining
+        # the legacy OpenAI-compatible field names.
+        body.pop("max_completion_tokens", None)
+        body["max_tokens"] = max_tokens
+        body.setdefault("temperature", 0.1)
+        return True
+    if unsupported and "max_tokens" in normalized and "max_completion_tokens" in normalized and "max_tokens" in body:
+        body.pop("max_tokens", None)
+        body["max_completion_tokens"] = max_tokens
+        return True
+    if unsupported and "temperature" in normalized and "temperature" in body:
+        body.pop("temperature", None)
+        return True
+    return False
 
 
 def _safe_error_body(error: HTTPError) -> str:
