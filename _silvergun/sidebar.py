@@ -10,25 +10,16 @@ try:
 except ImportError:
     SidebarContextSensitivity = None
     SidebarWidgetLocation = None
-<<<<<<< HEAD
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QImage, QPixmap, QAction
 from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QMenuBar, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout, QWidget
-=======
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QFrame, QGridLayout, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QScrollArea, QVBoxLayout
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 from .commands import start_request
 from .external import ExternalCommandIndex
 from .notebook import AnalysisNotebook
 from .theme import CONSOLE_STYLESHEET, mark
 from .tools import TOOL_SCHEMAS
-<<<<<<< HEAD
 from .events import get_event_emitter, reset_event_emitter, EventFormatter, InvestigationEvent
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 
 def _view_from_frame(view_frame):
@@ -45,7 +36,6 @@ def _view_from_frame(view_frame):
     return view_frame if hasattr(view_frame, "get_function_containing") else None
 
 
-<<<<<<< HEAD
 class SilverPrompt(QPlainTextEdit):
     """Prompt box: Enter or Ctrl+Return fires the request; Shift+Enter adds a newline."""
 
@@ -60,8 +50,6 @@ class SilverPrompt(QPlainTextEdit):
         super().keyPressEvent(event)
 
 
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 class SilvergunSidebarWidget(SidebarWidget):
     def __init__(self, name, frame, data):
         super().__init__(name)
@@ -69,7 +57,6 @@ class SilvergunSidebarWidget(SidebarWidget):
         self.setStyleSheet(CONSOLE_STYLESHEET)
         self._frame = frame
         self._offset = None
-<<<<<<< HEAD
         self._bv = _view_from_frame(data)
         self._data = data
         self._capability_labels: list[QLabel] = []
@@ -118,19 +105,6 @@ class SilvergunSidebarWidget(SidebarWidget):
         title = QLabel("SILVERGUN")
         mark(title, "display")
         subtitle = QLabel("BINARY ANALYSIS WEAPON")
-=======
-        self._bv = data if hasattr(data, "get_function_containing") else None
-        self._data = data
-        self._capability_labels: list[QLabel] = []
-
-        logo = QLabel()
-        logo.setPixmap(self._icon_pixmap())
-        logo.setFixedSize(58, 58)
-        logo.setScaledContents(True)
-        title = QLabel("SILVERGUN")
-        mark(title, "display")
-        subtitle = QLabel("BINARY ANALYSIS WEAPON / REV 01")
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         mark(subtitle, "eyebrow")
         header_text = QVBoxLayout()
         header_text.setSpacing(2)
@@ -141,10 +115,7 @@ class SilvergunSidebarWidget(SidebarWidget):
         header.addWidget(logo)
         header.addLayout(header_text, 1)
         header.addStretch()
-<<<<<<< HEAD
         content_layout.addLayout(header)
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
         self._target_panel = self._panel()
         target_layout = QGridLayout(self._target_panel)
@@ -169,7 +140,6 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._case_status = self._value_label("STANDBY")
         target_layout.addWidget(case_caption, 6, 0)
         target_layout.addWidget(self._case_status, 6, 1)
-<<<<<<< HEAD
         content_layout.addWidget(self._target_panel)
 
         self._status = QLabel("SYSTEM READY / ACQUIRE A TARGET")
@@ -250,24 +220,17 @@ class SilvergunSidebarWidget(SidebarWidget):
         result_actions.addWidget(review)
         result_actions.addWidget(clear)
         content_layout.addLayout(result_actions)
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
         self._capability_panel = self._panel()
         capability_layout = QVBoxLayout(self._capability_panel)
         capability_layout.setContentsMargins(10, 8, 10, 8)
         capability_layout.setSpacing(2)
-<<<<<<< HEAD
         capability_heading = QLabel("CAPABILITY INVENTORY")
-=======
-        capability_heading = QLabel("SYSTEM CAPABILITIES")
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         mark(capability_heading, "eyebrow")
         capability_layout.addWidget(capability_heading)
         self._capability_layout = capability_layout
         self._refresh_capabilities()
 
-<<<<<<< HEAD
         capability_scroll = QScrollArea()
         capability_scroll.setWidgetResizable(True)
         capability_scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -278,91 +241,6 @@ class SilvergunSidebarWidget(SidebarWidget):
         content_layout.addStretch()
         scroll.setWidget(content)
         outer.addWidget(scroll)
-=======
-        self._status = QLabel("SYSTEM READY / ACQUIRE A TARGET")
-        self._status.setWordWrap(True)
-        mark(self._status, "status")
-        self._activity = QPlainTextEdit()
-        self._activity.setReadOnly(True)
-        self._activity.setMaximumHeight(76)
-        self._activity.setPlaceholderText("Telemetry will appear here.")
-        self._activity.setPlainText("[00:00:00] CONSOLE ONLINE\n[00:00:00] AWAITING INVESTIGATION")
-
-        self._prompt = QPlainTextEdit()
-        self._prompt.setPlaceholderText("Enter investigation directive…\nExamples: use BoolHunter to find purchase validation; investigate authentication flow")
-        self._prompt.setMinimumHeight(108)
-        fire = QPushButton("FIRE")
-        mark(fire, "fire")
-        fire.clicked.connect(self._ask)
-        explain = QPushButton("EXPLAIN TARGET")
-        explain.clicked.connect(self._explain)
-        security = QPushButton("SCAN VULNERABILITIES")
-        security.clicked.connect(self._security)
-        triage = QPushButton("TRIAGE BINARY")
-        triage.clicked.connect(self._triage)
-        verify = QPushButton("VERIFY TARGET")
-        verify.clicked.connect(self._verify)
-        code_map = QPushButton("CODE MAP")
-        code_map.clicked.connect(self._map)
-        configure = QPushButton("PROVIDER")
-        configure.clicked.connect(self._configure)
-        command_row = QHBoxLayout()
-        command_row.addWidget(fire)
-        command_row.addWidget(configure)
-        quick = QHBoxLayout()
-        quick.addWidget(explain)
-        quick.addWidget(security)
-        advanced = QHBoxLayout()
-        advanced.addWidget(triage)
-        advanced.addWidget(verify)
-        advanced.addWidget(code_map)
-
-        result_label = QLabel("INVESTIGATION OUTPUT")
-        mark(result_label, "eyebrow")
-        self._result = QPlainTextEdit()
-        self._result.setReadOnly(True)
-        self._result.setMinimumHeight(240)
-        self._result.setPlaceholderText("Analysis stream and tool results appear here.")
-
-        result_actions = QHBoxLayout()
-        continue_case = QPushButton("CONTINUE CASE")
-        continue_case.clicked.connect(self._continue_case)
-        review_evidence = QPushButton("REVIEW EVIDENCE")
-        review_evidence.clicked.connect(self._review_evidence)
-        clear_console = QPushButton("CLEAR CONSOLE")
-        clear_console.clicked.connect(self._clear_console)
-        result_actions.addWidget(continue_case)
-        result_actions.addWidget(review_evidence)
-        result_actions.addWidget(clear_console)
-
-        capability_scroll = QScrollArea()
-        capability_scroll.setWidgetResizable(True)
-        capability_scroll.setFrameShape(QFrame.Shape.NoFrame)
-        capability_scroll.setMaximumHeight(190)
-        capability_scroll.setWidget(self._capability_panel)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 8)
-        layout.setSpacing(7)
-        layout.addLayout(header)
-        layout.addWidget(self._target_panel)
-        layout.addWidget(self._status)
-        console_label = QLabel("AGENT CONSOLE / NATURAL-LANGUAGE CONTROL")
-        mark(console_label, "eyebrow")
-        layout.addWidget(console_label)
-        layout.addWidget(self._activity)
-        layout.addWidget(self._prompt)
-        layout.addLayout(command_row)
-        layout.addLayout(quick)
-        layout.addLayout(advanced)
-        layout.addWidget(result_label)
-        layout.addWidget(self._result, 1)
-        layout.addLayout(result_actions)
-        inventory_label = QLabel("CAPABILITY INVENTORY / STATUS")
-        mark(inventory_label, "eyebrow")
-        layout.addWidget(inventory_label)
-        layout.addWidget(capability_scroll)
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         self._update_target()
 
     def _panel(self) -> QFrame:
@@ -382,18 +260,13 @@ class SilvergunSidebarWidget(SidebarWidget):
         if icon.isNull():
             icon = QImage(56, 56, QImage.Format.Format_RGB32)
             icon.fill(0)
-<<<<<<< HEAD
         return QPixmap.fromImage(icon).scaled(48, 48, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
-=======
-        return QPixmap.fromImage(icon).scaled(58, 58, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     def _refresh_capabilities(self) -> None:
         for label in self._capability_labels:
             self._capability_layout.removeWidget(label)
             label.deleteLater()
         self._capability_labels.clear()
-<<<<<<< HEAD
         
         view = self._active_view()
         
@@ -453,23 +326,6 @@ class SilvergunSidebarWidget(SidebarWidget):
             label = tool_name.replace("_", " ").upper()
             description = str(function.get("description", f"{section_name} capability"))
             self._add_capability(label, description, available=True)
-=======
-        for tool_name, schema in TOOL_SCHEMAS.items():
-            function = schema.get("function", {})
-            label = tool_name.replace("_", " ").upper()
-            description = str(function.get("description", "Native analysis capability"))
-            self._add_capability(label, description, available=True)
-        view = self._active_view()
-        if view is not None:
-            try:
-                external = ExternalCommandIndex().refresh(view, self._function())
-                for capability in external:
-                    self._add_capability(capability.name.upper(), capability.description, available=True)
-            except Exception:
-                pass
-        if not self._capability_labels:
-            self._add_capability("NO CAPABILITIES", "Open a BinaryView to populate the instrument array.", available=False)
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     def _add_capability(self, name: str, description: str, *, available: bool) -> None:
         label = QLabel(f"●  {name}\n   {description[:78]}")
@@ -478,7 +334,6 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._capability_layout.addWidget(label)
         self._capability_labels.append(label)
 
-<<<<<<< HEAD
     def _highlight_tool(self, tool_name: str) -> None:
         """Highlight a tool in the capabilities list when it's being used."""
         if not tool_name or len(tool_name) < 2:
@@ -530,23 +385,6 @@ class SilvergunSidebarWidget(SidebarWidget):
         label.setProperty("active", True)
         label.style().unpolish(label)
         label.style().polish(label)
-=======
-    def _engage_capability(self, request: str) -> None:
-        """Illuminate the best visible instrument for the active directive."""
-        normalized = request.lower()
-        matched = False
-        for label in self._capability_labels:
-            name = label.text().split("\n", 1)[0].replace("●", "").strip().lower()
-            active = name != "no capabilities" and any(token in normalized for token in name.split() if len(token) > 3)
-            label.setProperty("active", active)
-            label.style().unpolish(label)
-            label.style().polish(label)
-            matched = matched or active
-        if not matched and self._capability_labels:
-            self._capability_labels[0].setProperty("active", True)
-            self._capability_labels[0].style().unpolish(self._capability_labels[0])
-            self._capability_labels[0].style().polish(self._capability_labels[0])
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     def _update_target(self) -> None:
         view = self._active_view()
@@ -595,15 +433,12 @@ class SilvergunSidebarWidget(SidebarWidget):
 
     def _submit(self, request: str) -> None:
         request = request.strip()
-<<<<<<< HEAD
         prefixes = ("silver, ", "silver: ", "silver ", "hey silver, ", "hey silver: ", "hey silver ")
         lower_request = request.lower()
         for prefix in prefixes:
             if lower_request.startswith(prefix):
                 request = request[len(prefix):].strip()
                 break
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         if not request:
             self._status.setText("DIRECTIVE REQUIRED / ENTER A REQUEST")
             return
@@ -611,18 +446,11 @@ class SilvergunSidebarWidget(SidebarWidget):
         if view is None:
             self._status.setText("TARGET NOT ACQUIRED / OPEN A BINARY VIEW")
             return
-<<<<<<< HEAD
         self._prompt.clear()
         self._status.setText("SCANNING / ANALYZING / CAPABILITY STANDBY")
         self._activity.setPlainText("[00:00:00] CONSOLE ONLINE\n[00:00:00] AWAITING INVESTIGATION")
         self._result.setPlainText(f"REQUEST / {request}\n")
         self._last_narration = ""
-=======
-        self._status.setText("SCANNING / ANALYZING / CAPABILITY STANDBY")
-        self._engage_capability(request)
-        self._activity.setPlainText("[NOW] TARGET ACQUIRED\n[NOW] CAPABILITY ROUTING\n[NOW] ANALYSIS IN PROGRESS…")
-        self._result.setPlainText("[STREAM] Silvergun is routing this request and gathering evidence…")
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         start_request(view, request, self._function(), self._completed, self._stream_update)
 
     def _ask(self) -> None:
@@ -643,7 +471,6 @@ class SilvergunSidebarWidget(SidebarWidget):
     def _map(self) -> None:
         self._submit("Build a compact code map for the current function and explain the important caller/callee relationships with evidence.")
 
-<<<<<<< HEAD
     def _typed_request(self, fallback: str) -> str:
         """Prefer whatever the analyst typed; fall back to the canned directive."""
         typed = self._prompt.toPlainText().strip()
@@ -669,25 +496,11 @@ class SilvergunSidebarWidget(SidebarWidget):
             label.setProperty("active", False)
             label.style().unpolish(label)
             label.style().polish(label)
-=======
-    def _continue_case(self) -> None:
-        self._submit("Continue the investigation from the restored case file. Review unresolved questions and choose the highest-value next evidence to collect.")
-
-    def _review_evidence(self) -> None:
-        self._submit("Audit the latest investigation results. List every significant conclusion with its supporting function, address, xref, string, IL, search, or plugin evidence, and flag unsupported claims.")
-
-    def _clear_console(self) -> None:
-        self._prompt.clear()
-        self._activity.setPlainText("[NOW] CONSOLE CLEARED\n[NOW] AWAITING INVESTIGATION")
-        self._result.clear()
-        self._status.setText("SYSTEM READY / ENTER AN INVESTIGATION DIRECTIVE")
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     def _configure(self) -> None:
         from .ui import ProviderDialog
         ProviderDialog(self).exec()
 
-<<<<<<< HEAD
     def _inspect_capabilities(self) -> None:
         from .commands import inspect_capabilities
         view = self._active_view()
@@ -859,24 +672,6 @@ class SilvergunSidebarWidget(SidebarWidget):
         
         return None
 
-=======
-    def _completed(self, markdown: str) -> None:
-        failed = markdown.startswith("# Provider error") or markdown.startswith("# Silvergun error")
-        self._status.setText("ANALYSIS FAILED / REVIEW TELEMETRY" if failed else "ANALYSIS COMPLETE / RESULTS LOCKED")
-        self._activity.setPlainText("[NOW] CAPABILITY DISENGAGED\n[NOW] ANALYSIS COMPLETE" if not failed else "[NOW] PROVIDER FAULT\n[NOW] ANALYSIS ABORTED")
-        self._result.setPlainText(markdown)
-
-    def _stream_update(self, message: str) -> None:
-        """Display bounded tool/model events while the background investigation runs."""
-        activity = self._activity.toPlainText().splitlines()
-        activity.extend(message.splitlines())
-        self._activity.setPlainText("\n".join(activity[-12:]))
-        current = self._result.toPlainText()
-        self._result.setPlainText((current + "\n\n[STREAM] " + message)[-16000:])
-        scrollbar = self._result.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
-
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 class SilvergunSidebarWidgetType(SidebarWidgetType):
     def __init__(self):

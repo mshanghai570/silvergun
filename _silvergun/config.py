@@ -54,11 +54,7 @@ def register_settings() -> None:
         "modelCache": _schema("Model Cache", "Cached models from the last successful provider lookup.", "string", "[]", isSerialized=True, hidden=True),
         "secretProvider": _schema("Secret Provider", "Optional Binary Ninja secrets provider name used for the API key.", "string", ""),
         "timeoutSeconds": _schema("Request Timeout", "Network timeout for provider requests in seconds.", "number", 45, minValue=5, maxValue=300),
-<<<<<<< HEAD
         "maxSteps": _schema("Maximum Tool Rounds", "Hard limit for agent tool rounds; compound goals like find-and-patch need several rounds.", "number", 5, minValue=1, maxValue=8),
-=======
-        "maxSteps": _schema("Maximum Tool Rounds", "Hard limit for agent tool rounds; keep this low for speed.", "number", 3, minValue=1, maxValue=8),
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         "parallelJobs": _schema("Parallel Reviews", "Maximum independent remote read-only reviews.", "number", 3, minValue=1, maxValue=8),
         "maxContextChars": _schema("Context Budget", "Maximum compact program context passed to the model.", "number", 18000, minValue=4000, maxValue=64000),
         "caBundle": _schema("CA Bundle Path", "Optional PEM CA bundle used for provider TLS verification. Leave empty for system roots or certifi.", "string", "", ignore=["SettingsProjectScope", "SettingsResourceScope"]),

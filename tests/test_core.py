@@ -131,7 +131,6 @@ class RouterTests(unittest.TestCase):
         self.assertIn("invoke_external_command", route.tools)
         self.assertEqual(route.external[0].identifier, "cmd_1")
 
-<<<<<<< HEAD
     def test_string_search_request_selects_binary_ninja_string_tools(self):
         route = CapabilityRouter().route("Find all strings containing password in this binary", [])
         self.assertEqual(route.intent, "strings")
@@ -168,8 +167,6 @@ class RouterTests(unittest.TestCase):
         self.assertIn("notebook_context", route.tools)
         self.assertIn("get_function_context", route.tools)
 
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 if __name__ == "__main__":
     unittest.main()

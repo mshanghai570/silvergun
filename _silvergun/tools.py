@@ -18,10 +18,7 @@ except ImportError:
 from .external import ExternalCommandIndex
 from .notebook import AnalysisNotebook, Finding
 from .router import ExternalCapability, capability_digest
-<<<<<<< HEAD
 from .events import emit_tool_started, emit_tool_progress, emit_tool_result, emit_tool_completed, emit_tool_failed
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 
 MAX_ITEMS = 64
@@ -111,7 +108,6 @@ class NativeTools:
         image_base = getattr(self.bv, "start", None)
         entry = getattr(self.bv, "entry_point", None)
         current = self._snapshot(self.function) if self.function is not None else None
-<<<<<<< HEAD
 
         file_format = ""
         try:
@@ -133,24 +129,16 @@ class NativeTools:
         except Exception:
             pass
 
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         payload = {
             "binary_view_attached": True,
             "filename": filename,
             "platform": platform,
-<<<<<<< HEAD
             "file_format": file_format,
             "architecture": architecture,
             "image_base": hex(image_base) if isinstance(image_base, int) else None,
             "entry_point": hex(entry) if isinstance(entry, int) else None,
             "function_count": len(getattr(self.bv, "functions", [])),
             "analysis_state": analysis_state,
-=======
-            "image_base": hex(image_base) if isinstance(image_base, int) else None,
-            "entry_point": hex(entry) if isinstance(entry, int) else None,
-            "function_count": len(getattr(self.bv, "functions", [])),
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
             "current_function": current,
         }
         return json.dumps(payload, separators=(",", ":"))
@@ -180,7 +168,6 @@ class NativeTools:
         }
         if name not in actions:
             raise KeyError(f"Unknown or agent-managed tool: {name}")
-<<<<<<< HEAD
         
         # Emit tool started event
         emit_tool_started(name, f"Executing {name}")
@@ -194,9 +181,6 @@ class NativeTools:
             # Emit tool failed event
             emit_tool_failed(name, f"Failed: {name}", str(e))
             raise
-=======
-        return _cap(actions[name](arguments), self.max_context_chars)
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     @_main_thread
     def snapshots(self, addresses: list[str]) -> list[dict[str, Any]]:
@@ -224,7 +208,6 @@ class NativeTools:
 
     def _find_functions(self, args: dict[str, Any]) -> str:
         query = str(args.get("query", "")).strip().lower()
-<<<<<<< HEAD
         if len(query) < 3:
             # An empty substring matches every function name and teaches the
             # model nothing; steer it toward a useful query instead.
@@ -234,8 +217,6 @@ class NativeTools:
                 "query": query,
                 "matches": [],
             }, separators=(",", ":"))
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         limit = min(MAX_ITEMS, max(1, int(args.get("max_results", 12))))
         matches = [
             {"address": hex(func.start), "name": func.name, "size": getattr(func, "total_bytes", 0)}
@@ -281,7 +262,6 @@ class NativeTools:
         query = str(args.get("query", "")).strip().lower()
         terms = [term for term in re.findall(r"[a-z0-9_]{3,}", query) if term not in {"find", "show", "likely", "functions"}]
         limit = min(24, max(1, int(args.get("max_results", 10))))
-<<<<<<< HEAD
         
         emit_tool_progress("semantic_search", f"Searching for: {', '.join(terms[:5])}")
         
@@ -307,17 +287,6 @@ class NativeTools:
         
         emit_tool_result("semantic_search", f"Found {len(matches)} matches for query: {query[:30]}...", {"count": len(matches)})
         
-=======
-        if not terms:
-            return json.dumps({"query": query, "matches": [], "note": "Add at least one meaningful search term."}, separators=(",", ":"))
-        ranked = []
-        for function, name, haystack in self._triage_records():
-            score = sum((3 if term in str(function.name).lower() else 1) for term in terms if term in haystack)
-            if score:
-                ranked.append((score, function))
-        ranked.sort(key=lambda item: (-item[0], item[1].start))
-        matches = [{"address": hex(function.start), "name": function.name, "score": score, "evidence": [f"HLIL/name/signature match for: {', '.join(terms)}"]} for score, function in ranked[:limit]]
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         return json.dumps({"query": query, "matches": matches, "method": "bounded lexical semantic triage; verify each result"}, separators=(",", ":"))
 
     def _query_binary(self, args: dict[str, Any]) -> str:
@@ -434,7 +403,6 @@ class NativeTools:
         identifier = str(args.get("capability_id", ""))
         capability = next((item for item in self.capabilities if item.identifier == identifier), None)
         if capability is None:
-<<<<<<< HEAD
             emit_tool_failed("invoke_external_command", f"Plugin capability not found: {identifier}", "Capability not available")
             return "That plugin capability is not available in the current context."
         
@@ -453,12 +421,6 @@ class NativeTools:
         except Exception as e:
             emit_tool_failed("invoke_external_command", f"Plugin execution failed: {capability.name}", str(e))
             return f"Plugin execution failed: {e}"
-=======
-            return "That plugin capability is not available in the current context."
-        if not self._confirm("Run External Plugin Command", f"Run '{capability.name}'?\n\n{capability.description}\n\nExternal commands may modify the current analysis."):
-            return "User declined the external plugin command."
-        return self.external.execute(identifier, self.bv, self.function)
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     @_main_thread
     def _apply_patch(self, args: dict[str, Any]) -> str:

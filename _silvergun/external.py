@@ -9,10 +9,7 @@ from typing import Any
 from binaryninja import PluginCommand, PluginCommandContext
 
 from .router import ExternalCapability
-<<<<<<< HEAD
 from .events import emit_tool_started, emit_tool_result, emit_tool_completed, emit_tool_failed
-=======
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 
 class ExternalCommandIndex:
@@ -54,7 +51,6 @@ class ExternalCommandIndex:
     def execute(self, identifier: str, bv, function=None) -> str:
         command = self._commands.get(identifier)
         if command is None:
-<<<<<<< HEAD
             emit_tool_failed("external_command", f"Command unavailable: {identifier}", "Plugin capability not found")
             raise KeyError("The requested plugin capability is unavailable in the current Binary Ninja context.")
         
@@ -69,11 +65,6 @@ class ExternalCommandIndex:
         except Exception as e:
             emit_tool_failed("external_command", f"Plugin command failed: {command_name}", str(e))
             raise
-=======
-            raise KeyError("The requested plugin capability is unavailable in the current Binary Ninja context.")
-        command.execute(self._context(bv, function))
-        return f"Executed external command: {getattr(command, 'name', identifier)}"
->>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     @staticmethod
     def _identifier(name: str) -> str:

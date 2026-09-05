@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Any
 
+from binaryninja.mainthread import execute_on_main_thread_and_wait, is_main_thread
+
 from ..router import ExternalCapability
 from ..events import emit_tool_started, emit_tool_result, emit_tool_completed, emit_tool_failed
 
@@ -27,6 +29,7 @@ class AdapterRegistry:
         self._tools: dict[str, tuple[str, dict[str, Any]]] = {}
         self._capabilities: list[ExternalCapability] = []
         self._discovered = False
+        self._context_key: int | None = None
 
     @classmethod
     def get(cls) -> "AdapterRegistry":
@@ -39,9 +42,16 @@ class AdapterRegistry:
         cls._instance = None
 
     def discover(self, bv) -> None:
-        if self._discovered:
+        context_key = id(bv) if bv is not None else None
+        if self._discovered and self._context_key == context_key:
             return
+        # A SidebarWidget and background task can survive a view switch. Never
+        # reuse adapters bound to the old BinaryView.
+        self._adapters.clear()
+        self._tools.clear()
+        self._capabilities.clear()
         self._discovered = True
+        self._context_key = context_key
 
         self._discover_boolhunter(bv)
         self._discover_binaryninja_builtins(bv)
@@ -99,11 +109,16 @@ class AdapterRegistry:
         return schema
 
     def execute(self, tool_name: str, arguments: dict[str, Any]) -> str:
-        adapter_name = self._adapter_for_tool(tool_name)
-        adapter = self._adapters.get(adapter_name)
-        if adapter is None:
-            return json.dumps({"error": f"Adapter not available: {adapter_name}", "available": False})
-        return adapter.execute(tool_name, arguments)
+        def invoke() -> str:
+            adapter_name = self._adapter_for_tool(tool_name)
+            adapter = self._adapters.get(adapter_name)
+            if adapter is None:
+                return json.dumps({"error": f"Adapter not available: {adapter_name}", "available": False})
+            return adapter.execute(tool_name, arguments)
+
+        if is_main_thread():
+            return invoke()
+        return execute_on_main_thread_and_wait(invoke)
 
     def capabilities(self) -> list[ExternalCapability]:
         return list(self._capabilities)
