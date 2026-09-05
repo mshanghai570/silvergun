@@ -42,7 +42,7 @@ install_binaryninja_stub()
 from _silvergun import tools as tools_module
 from _silvergun.agent import LeanAgent
 from _silvergun.external import ExternalCommandIndex
-from _silvergun.tools import NativeTools
+from _silvergun.tools import NativeTools, _hex_bytes
 
 
 class Instruction:
@@ -156,6 +156,36 @@ class NativeToolsTests(unittest.TestCase):
 
         result = LeanAgent(Client(), Settings()).run("Explain this function", self.tools)
         self.assertEqual(result.answer, "Recovered after malformed tool call.")
+
+    def test_mutation_is_blocked_until_evidence_is_collected(self):
+        class Settings:
+            max_steps = 3
+            parallel_jobs = 1
+            model = "test-model"
+
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, _model, _messages, _tools, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    call = {"id": "patch_first", "function": {"name": "apply_patch", "arguments": '{"address":"0x401000","bytes_hex":"90","reason":"test"}'}}
+                    return type("Completion", (), {"content": "", "tool_calls": (call,)})()
+                if self.calls == 2:
+                    call = {"id": "context_after_guard", "function": {"name": "get_function_context", "arguments": "{}"}}
+                    return type("Completion", (), {"content": "", "tool_calls": (call,)})()
+                return type("Completion", (), {"content": "Evidence collected; patch not applied.", "tool_calls": ()})()
+
+        result = LeanAgent(Client(), Settings()).run("Smart patch this function", self.tools)
+        self.assertEqual(result.answer, "Evidence collected; patch not applied.")
+        self.assertEqual(self.view.writes, [])
+        self.assertEqual(_choice_calls, [])
+
+    def test_patch_byte_parser_accepts_prefixes_and_rejects_invalid_text(self):
+        self.assertEqual(_hex_bytes("0x90 0xCC"), b"\x90\xcc")
+        with self.assertRaises(ValueError):
+            _hex_bytes("90 not-bytes")
 
     def test_find_functions_requires_a_real_query(self):
         empty = json.loads(self.tools.execute("find_functions", {"query": ""}))

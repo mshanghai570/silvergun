@@ -180,6 +180,16 @@ class RouterTests(unittest.TestCase):
         self.assertIn("search_capabilities", route.tools)
         self.assertIn("invoke_external_command", route.tools)
 
+    def test_smart_patch_route_is_mutation_specific(self):
+        route = CapabilityRouter().route("Review this function for a precise smart patch. Explain the fix first.", [])
+        self.assertEqual(route.intent, "patch")
+        self.assertEqual(route.tools[:2], ("get_function_context", "apply_patch"))
+
+    def test_explicit_xref_request_uses_xref_route(self):
+        route = CapabilityRouter().route("Analyze this function's callers and callees", [])
+        self.assertEqual(route.intent, "xrefs")
+        self.assertIn("get_xrefs", route.tools)
+
 
 if __name__ == "__main__":
     unittest.main()

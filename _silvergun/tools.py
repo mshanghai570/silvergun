@@ -548,9 +548,10 @@ def _address(value: str, default: int | None) -> int:
 
 
 def _hex_bytes(value: str) -> bytes:
-    normalized = re.sub(r"[^0-9a-fA-F]", "", value)
-    if not normalized or len(normalized) % 2:
-        raise ValueError("bytes_hex must contain complete hexadecimal byte pairs")
+    normalized = re.sub(r"(?i)0x", "", value)
+    normalized = re.sub(r"[\s,;:_-]+", "", normalized)
+    if not normalized or not re.fullmatch(r"[0-9a-fA-F]+", normalized) or len(normalized) % 2:
+        raise ValueError("bytes_hex must contain complete hexadecimal byte pairs (for example: 90 90 or 0x90 0x90)")
     return bytes.fromhex(normalized)
 
 

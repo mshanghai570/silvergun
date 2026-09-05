@@ -104,6 +104,8 @@ class CapabilityRouter:
         has_mutation = _has_mutation_intent(normalized)
         explicit_provider_search = any(term in normalized for term in ("all plugins", "any plugin", "find a plugin", "plugin that", "plugin which", "plugin type"))
         generic_function_search = normalized in ("search functions", "search for functions", "locate functions")
+        explicit_smart_patch = any(term in normalized for term in ("smart patch", "precise patch", "patch this function"))
+        explicit_xrefs = any(term in normalized for term in ("callers and callees", "caller and callee", "cross reference", "cross-reference"))
         
         best_intent = "general"
         selected = ("get_function_context", "search_capabilities")
@@ -115,13 +117,17 @@ class CapabilityRouter:
                 score += 3
             if generic_function_search and intent == "search":
                 score += 3
+            if explicit_smart_patch and intent == "patch":
+                score += 3
+            if explicit_xrefs and intent == "xrefs":
+                score += 3
             
             # Boost discovery intents when discovery terms are present
             if has_discovery and intent in ("triage", "continue", "investigate", "category", "boolean", "vulnerabilities", "map", "strings", "symbols"):
                 score += 2
             
             # Deprioritize mutation intents when discovery terms are also present
-            if has_discovery and has_mutation and intent in ("patch", "rename"):
+            if has_discovery and has_mutation and intent in ("patch", "rename") and not explicit_smart_patch:
                 score -= 2
                 
             if score > best_score:
@@ -130,9 +136,12 @@ class CapabilityRouter:
         # If both discovery and mutation, ensure discovery tools are included
         if has_discovery and has_mutation:
             if best_intent in ("patch", "rename"):
-                # Prepend discovery tools
-                discovery_tools = ("find_functions", "semantic_search", "get_xrefs", "boolhunter_quick_scan", "boolhunter_find_category")
-                selected = tuple(dict.fromkeys(discovery_tools + selected))
+                if explicit_smart_patch:
+                    selected = ("get_function_context", "apply_patch")
+                else:
+                    # Prepend discovery tools
+                    discovery_tools = ("find_functions", "semantic_search", "get_xrefs", "boolhunter_quick_scan", "boolhunter_find_category")
+                    selected = tuple(dict.fromkeys(discovery_tools + selected))
             else:
                 # A compound goal ("find the vulnerable functions and patch them")
                 # must still carry the requested mutation tool even though a

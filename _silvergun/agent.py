@@ -52,6 +52,15 @@ ROUTE_GUIDANCE = {
     "continue": "Restore the case file with notebook_context first, then re-verify the recorded leads with fresh evidence before acting on them.",
 }
 
+MUTATION_TOOLS = frozenset({"apply_patch", "rename_function", "apply_function_type", "annotate_function", "invoke_external_command"})
+EVIDENCE_TOOLS = frozenset({
+    "get_function_context", "get_xrefs", "get_type_evidence", "review_vulnerabilities",
+    "semantic_search", "query_binary", "get_verification", "code_map", "bn_analyze",
+    "bn_decompile", "bn_find_cross_references", "bn_search_strings", "bn_search_symbols",
+    "bn_find_functions", "boolhunter_quick_scan", "boolhunter_analyze", "boolhunter_batch_scan",
+    "boolhunter_find_category", "fanout_investigate", "search_capabilities", "invoke_external_command",
+})
+
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -99,6 +108,7 @@ class LeanAgent:
             ]
             executed: set[str] = set()
             tool_call_counts: dict[str, int] = {}
+            evidence_collected = False
             
             for round_number in range(1, self.settings.max_steps + 1):
                 emit_round_started(round_number, self.settings.max_steps)
@@ -122,10 +132,19 @@ class LeanAgent:
                         if signature in executed:
                             result = "Skipped duplicate tool call. Use the previous result."
                             emit_tool_result(name, f"Skipped duplicate call: {signature[:50]}...")
+                        elif name in MUTATION_TOOLS and not evidence_collected:
+                            result = (
+                                "Mutation blocked until Silvergun collects relevant Binary Ninja evidence. "
+                                "First call get_function_context (and get_xrefs or another relevant read-only tool), "
+                                "then propose the exact mutation with its evidence and wait for approval."
+                            )
+                            emit_tool_failed(name, "Mutation requested before evidence", result)
                         else:
                             executed.add(signature)
                             tool_call_counts[name] = tool_call_counts.get(name, 0) + 1
                             result = self._execute(name, arguments, native)
+                            if name in EVIDENCE_TOOLS and not result.startswith(("Tool error:", "Unexpected tool error:")):
+                                evidence_collected = True
                             if tool_call_counts[name] >= 2:
                                 # Break the repeat-exploration loop: give the model a
                                 # corrective signal instead of burning another round.
