@@ -10,6 +10,7 @@ import ssl
 from typing import Any, Iterable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from .contracts import ProviderError
 
 
 MAX_RESPONSE_BYTES = 8 * 1024 * 1024
@@ -22,10 +23,6 @@ class ProviderSettings(Protocol):
     model: str
     timeout_seconds: int
     ca_bundle: str
-
-
-class ProviderError(RuntimeError):
-    """A provider error safe to show in the Binary Ninja UI."""
 
 
 @dataclass(frozen=True)

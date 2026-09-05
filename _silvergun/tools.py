@@ -131,6 +131,7 @@ class NativeTools:
 
         payload = {
             "binary_view_attached": True,
+            "binary_view_id": hex(id(self.bv)),
             "filename": filename,
             "platform": platform,
             "file_format": file_format,

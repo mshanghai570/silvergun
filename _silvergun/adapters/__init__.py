@@ -6,10 +6,9 @@ import json
 import logging
 from typing import Any
 
-from binaryninja.mainthread import execute_on_main_thread_and_wait, is_main_thread
-
 from ..router import ExternalCapability
 from ..events import emit_tool_started, emit_tool_result, emit_tool_completed, emit_tool_failed
+from ..execution import on_binary_ninja_thread
 
 logger = logging.getLogger(__name__)
 
@@ -116,9 +115,7 @@ class AdapterRegistry:
                 return json.dumps({"error": f"Adapter not available: {adapter_name}", "available": False})
             return adapter.execute(tool_name, arguments)
 
-        if is_main_thread():
-            return invoke()
-        return execute_on_main_thread_and_wait(invoke)
+        return on_binary_ninja_thread(invoke)
 
     def capabilities(self) -> list[ExternalCapability]:
         return list(self._capabilities)

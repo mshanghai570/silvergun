@@ -40,7 +40,9 @@ class ExternalCommandIndex:
             identifier = self._identifier(name)
             description = str(getattr(command, "description", "") or "No description supplied by the plugin.")
             self._commands[identifier] = command
-            capabilities.append(ExternalCapability(identifier, name, description, mutation_risk=True))
+            callable_command = callable(getattr(command, "execute", None))
+            status = "CALLABLE" if callable_command else "UI_ONLY"
+            capabilities.append(ExternalCapability(identifier, name, description, mutation_risk=True, status=status))
         ordered = tuple(sorted(capabilities, key=lambda capability: capability.name.lower()))
         self._cache[key] = (self._commands.copy(), ordered)
         self._cache.move_to_end(key)
@@ -53,6 +55,9 @@ class ExternalCommandIndex:
         if command is None:
             emit_tool_failed("external_command", f"Command unavailable: {identifier}", "Plugin capability not found")
             raise KeyError("The requested plugin capability is unavailable in the current Binary Ninja context.")
+        if not callable(getattr(command, "execute", None)):
+            emit_tool_failed("external_command", f"Command is UI-only: {identifier}", "The plugin does not expose a callable command API")
+            raise RuntimeError("The requested plugin capability is UI-only and cannot be invoked autonomously.")
         
         command_name = getattr(command, 'name', identifier)
         emit_tool_started("external_command", f"Executing plugin command: {command_name}")

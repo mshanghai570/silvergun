@@ -9,6 +9,8 @@ from typing import Any
 
 from .adapters import AdapterRegistry
 from .client import OpenAICompatibleClient, ProviderError
+from .capability_registry import CapabilityRegistry, plan_from_route
+from .contracts import PlanValidationError, normalize_result
 from .router import CapabilityRouter, Route
 from .tools import NativeTools
 from .events import (
@@ -96,12 +98,27 @@ class LeanAgent:
         if self.adapter_registry:
             capabilities = list(capabilities) + self.adapter_registry.capabilities()
         route = self.router.route(request, capabilities)
-        
-        self._emit(f"ROUTE / {route.intent.upper()} / {len(route.tools)} TOOLS SELECTED", f"I've mapped this to a {route.intent} investigation and lined up {len(route.tools)} tools.")
-        
-        tools = native.definitions(route.tools)
+
+        native_schemas = native.definitions(route.tools)
+        schema_index = {
+            str(schema.get("function", {}).get("name", "")): schema
+            for schema in native_schemas
+            if isinstance(schema, dict)
+        }
+        registry = CapabilityRegistry(schema_index, self.adapter_registry, route.external)
+        try:
+            plan = plan_from_route(request, route.intent, route.tools, registry)
+        except PlanValidationError as error:
+            self._emit("PLAN / INVALID / REPLANNING", f"The first plan was invalid, so I am rebuilding it from currently available capabilities: {error.message}")
+            valid_tools = tuple(tool for tool in route.tools if registry.get(tool) and registry.get(tool).available)
+            plan = plan_from_route(request, route.intent, valid_tools, registry)
+
+        selected_tools = tuple(step.capability_id for step in plan.steps)
+        self._emit(f"PLAN / VALIDATED / {len(selected_tools)} STEPS", f"I mapped this to a {plan.intent} investigation using {len(selected_tools)} currently available capabilities.")
+
+        tools = native.definitions(selected_tools)
         if self.adapter_registry:
-            for tool_name in route.tools:
+            for tool_name in selected_tools:
                 schema = self.adapter_registry.get_tool_schema(tool_name)
                 if schema:
                     tools.append(schema)
@@ -113,11 +130,12 @@ class LeanAgent:
         try:
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": self._request_message(request, route, native.context_hint(), native.notebook_context())},
+                {"role": "user", "content": self._request_message(request, route, native.context_hint(), native.notebook_context(), registry, plan)},
             ]
             executed: set[str] = set()
             tool_call_counts: dict[str, int] = {}
             evidence_collected = False
+            evidence_sequence = 0
             
             for round_number in range(1, self.settings.max_steps + 1):
                 emit_round_started(round_number, self.settings.max_steps)
@@ -152,6 +170,14 @@ class LeanAgent:
                             executed.add(signature)
                             tool_call_counts[name] = tool_call_counts.get(name, 0) + 1
                             result = self._execute(name, arguments, native)
+                            spec = registry.get(name)
+                            if spec is not None:
+                                normalized_result = normalize_result(spec, hex(id(native.bv)), result, sequence=evidence_sequence)
+                                evidence_sequence += 1
+                                if normalized_result.evidence:
+                                    emit_tool_result(name, f"Normalized {len(normalized_result.evidence)} structured evidence items", {"evidence_count": len(normalized_result.evidence), "capability_id": name})
+                                if not normalized_result.success:
+                                    emit_tool_failed(name, normalized_result.failure.display() if normalized_result.failure else "Capability failed", normalized_result.summary)
                             if name in EVIDENCE_TOOLS and not result.startswith(("Tool error:", "Unexpected tool error:")):
                                 evidence_collected = True
                             if tool_call_counts[name] >= 2:
@@ -249,14 +275,19 @@ class LeanAgent:
         return completion.content.strip() or "No review returned."
 
     @staticmethod
-    def _request_message(request: str, route: Route, context_hint: str, notebook_context: str = "") -> str:
+    def _request_message(request: str, route: Route, context_hint: str, notebook_context: str = "", registry: CapabilityRegistry | None = None, plan=None) -> str:
         extension_section = ""
         if route.external:
             cards = "\n".join(capability.card() for capability in route.external)
             extension_section = f"\n\nRelevant installed-plugin capabilities:\n{cards}"
+        capability_section = ""
+        if registry is not None and plan is not None:
+            cards = "\n".join(registry.get(step.capability_id).card() for step in plan.steps if registry.get(step.capability_id))
+            steps = " → ".join(step.capability_id for step in plan.steps)
+            capability_section = f"\n\nValidated capability plan (use only these available capabilities):\n{steps}\n{cards}"
         guidance = ROUTE_GUIDANCE.get(route.intent, "Gather the smallest relevant evidence before answering and state uncertainty explicitly.")
         case_section = f"\n\nRestored local case-file context (treat as leads and re-verify):\n{notebook_context}" if notebook_context and not notebook_context.startswith("No notebook") else ""
-        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.\nOperational directive: {guidance}{case_section}{extension_section}"
+        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.\nOperational directive: {guidance}{capability_section}{case_section}{extension_section}"
 
 
 def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:

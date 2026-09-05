@@ -10,10 +10,11 @@ Silvergun is a Python plugin for Binary Ninja 5.3+ that presents a fast, OpenAI-
 | --- | --- | --- |
 | Configuration | Persist non-secret provider preferences in Binary Ninja user settings and API keys through its configured secret provider when available. | Model discovery is debounced and cached by `(base URL, API-key fingerprint)`; no model-list call occurs during normal analysis. |
 | Provider client | Implement only `GET /models` and `POST /chat/completions` with Python's standard library. | Connection timeout, response limit, and low-temperature bounded completion requests prevent stalls and token bloat. |
-| Capability registry | Enumerate native tools plus valid Binary Ninja `PluginCommand`s in the active context. | Command discovery is cached per BinaryView/context revision and compacted into short capability cards. |
-| Router | Use deterministic keyword and scope matching to select a small tool subset before invoking the model. | The model never receives the full plugin-command catalog unless it explicitly requests a capability search. |
+| Capability registry | Build canonical `CapabilitySpec` records for native tools, adapters, and callable plugin commands in the active context. | Each capability has schema, evidence types, prerequisites, execution requirements, adapter, and `AVAILABLE`/`UNAVAILABLE`/`UI_ONLY`/`BROKEN` status. |
+| Planner | Validate a bounded plan against the current registry before the provider sees it. | Unknown, unavailable, or dependency-invalid capabilities are rejected and replanned; keyword routing is only a fallback aid. |
+| Router | Use deterministic keyword and scope matching as a compact initial hint for the planner. | The model receives the validated capability slice, not imaginary or UI-only tools. |
 | Agent loop | Execute a strict tool-call loop with an operation budget, duplicate-call suppression, and a small transcript window. | Tools return compact, capped snapshots; assistant reasoning text is not requested or retained. |
-| Execution | Keep Binary Ninja reads serialized on its API thread; run independent remote analysis requests through a bounded pool only after immutable snapshots have been created. | Mutating actions are always serialized and explicitly confirmed by the user. |
+| Execution | Route all adapter work through the Binary Ninja execution bridge; run independent remote analysis requests through a bounded pool only after immutable snapshots have been created. | Mutating actions are always serialized and explicitly confirmed by the user. |
 
 ## Request flow
 
@@ -32,6 +33,8 @@ flowchart LR
 
 The router first classifies the request into a small number of intents: patching, explanation, naming, type recovery, cross-reference analysis, annotation, vulnerability review, command discovery, or general investigation. It then adds the native tools required for that intent and at most a few relevant external plugin commands. The model can ask for `search_capabilities` when the initial slice is insufficient, which prevents every installed plugin from being exposed on every turn.
 
+The runtime pipeline is contract-driven: `CapabilityRegistry` assembles the active `CapabilitySpec` records; `plan_from_route` creates and validates `InvestigationPlan`; the agent executes only validated capability IDs; `normalize_result` converts adapter output into `CapabilityResult` and `Evidence`; and `BinaryViewContext` carries the identity of the view used for the investigation. Provider-specific response parsing remains inside the provider client.
+
 ## Tool and mutation policy
 
 Native analysis tools collect a compact per-function snapshot built from HLIL, function metadata, callers/callees, strings, variables, and types. Results are hard-capped before entering the model context. External plugin commands are discovered via `PluginCommand.get_valid_list(context)` and may be executed only from an allowlist derived from the current compact capability slice. Write operations are separated from analysis: `apply_patch`, `rename_function`, `apply_function_type`, and `annotate_function` require an affirmative confirmation dialog even when proposed by the model.
@@ -48,7 +51,7 @@ Native analysis tools collect a compact per-function snapshot built from HLIL, f
 
 ## Extensibility seam
 
-External functionality is represented as an `ExternalCapability` with a stable identifier, display name, concise description, action type, and execute callback. The initial adapter wraps compatible Binary Ninja plugin commands. Additional adapters can be placed in `_silvergun/adapters/` without changing the agent loop. The underscore-prefixed package is intentional because Binary Ninja loads the repository root as the `silvergun` plugin module. Native tools use the same descriptor shape; therefore the router and agent do not distinguish built-in versus extension-provided capability except for the mutation policy.
+External functionality is represented first as a compact discovery card and then as a canonical `CapabilitySpec`. Plugin discovery distinguishes `CALLABLE` commands from `UI_ONLY` commands; a discovered UI command is reported rather than passed to autonomous execution. The initial adapter wraps compatible Binary Ninja plugin commands, while BoolHunter and Binary Ninja built-ins implement the same adapter execution seam. Additional adapters can be placed in `_silvergun/adapters/` without changing the agent loop. The underscore-prefixed package is intentional because Binary Ninja loads the repository root as the `silvergun` plugin module.
 
 ## Deliberate non-goals
 

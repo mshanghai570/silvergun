@@ -15,10 +15,12 @@ class ExternalCapability:
     name: str
     description: str
     mutation_risk: bool = True
+    status: str = "CALLABLE"
+    adapter: str = "plugin_command"
 
     def card(self) -> str:
         risk = "may modify analysis" if self.mutation_risk else "read-only"
-        return f"{self.identifier}: {self.name} — {self.description[:180]} ({risk})"
+        return f"{self.identifier}: {self.name} — {self.description[:180]} ({risk}; {self.status})"
 
 
 @dataclass(frozen=True)
@@ -163,6 +165,8 @@ class CapabilityRouter:
             return ()
         ranked: list[tuple[int, ExternalCapability]] = []
         for capability in capabilities:
+            if getattr(capability, "status", "CALLABLE") != "CALLABLE":
+                continue
             haystack = f"{capability.name} {capability.description}".lower()
             score = sum(1 for token in tokens if token in haystack)
             if score:

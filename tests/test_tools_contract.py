@@ -110,6 +110,10 @@ class NativeToolsTests(unittest.TestCase):
         self.assertEqual(payload["parameters_and_locals"], ["arg1: char *"])
         self.assertTrue(payload["evidence"])
 
+    def test_context_hint_contains_binary_view_identity(self):
+        payload = json.loads(self.tools.context_hint())
+        self.assertEqual(payload["binary_view_id"], hex(id(self.view)))
+
     def test_triage_query_verification_and_code_map_are_local(self):
         semantic = json.loads(self.tools.execute("semantic_search", {"query": "find functions likely to call puts"}))
         self.assertEqual(semantic["matches"][0]["address"], "0x401000")
