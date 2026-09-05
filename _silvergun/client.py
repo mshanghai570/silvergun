@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import os
 import re
@@ -31,6 +31,11 @@ class ChatCompletion:
     tool_calls: tuple[dict[str, Any], ...]
     finish_reason: str | None
     raw: Mapping[str, Any]
+    usage: Mapping[str, Any] = field(default_factory=dict)
+
+    @property
+    def assistant_text(self) -> str:
+        return self.content
 
 
 class OpenAICompatibleClient:
@@ -89,7 +94,8 @@ class OpenAICompatibleClient:
         tool_calls = tuple(call for call in calls if isinstance(call, dict)) if isinstance(calls, list) else ()
         content, legacy_calls = _extract_legacy_tool_calls(content)
         tool_calls = tool_calls + legacy_calls
-        return ChatCompletion(content, tool_calls, choice.get("finish_reason"), payload)
+        usage = payload.get("usage", {}) if isinstance(payload.get("usage", {}), dict) else {}
+        return ChatCompletion(content, tool_calls, choice.get("finish_reason"), payload, usage)
 
     def _chat_request(self, body: dict[str, Any], max_tokens: int) -> dict[str, Any]:
         """Retry only documented parameter incompatibilities from compatible APIs.
@@ -183,8 +189,24 @@ def _extract_legacy_tool_calls(content: str) -> tuple[str, tuple[dict[str, Any],
     the compatibility path deliberately narrow: only a tool block containing
     ``arg_key``/``arg_value`` pairs is promoted to an executable call.
     """
-    if "<tool_call>" not in content or "<arg_key>" not in content:
+    stripped = content.strip()
+    if stripped.startswith("{"):
+        try:
+            envelope = json.loads(stripped)
+        except json.JSONDecodeError:
+            envelope = None
+        if isinstance(envelope, dict) and ("tool_calls" in envelope or "tool_call" in envelope):
+            raw_calls = envelope.get("tool_calls", envelope.get("tool_call"))
+            raw_calls = raw_calls if isinstance(raw_calls, list) else [raw_calls]
+            calls = tuple(call for call in raw_calls if isinstance(call, dict))
+            if not calls:
+                raise ProviderError("Provider returned a malformed JSON tool-call envelope.", operation="parse_tool_call", next_action="Retry with native structured tool calling.")
+            return "", calls
+    has_protocol = any(marker in content for marker in ("<tool_call>", "<arg_key>", "<arg_value>", "</tool_call>"))
+    if not has_protocol:
         return content, ()
+    if "<tool_call>" not in content or "<arg_key>" not in content or "<arg_value>" not in content:
+        raise ProviderError("Provider returned incomplete XML-like tool-call syntax.", operation="parse_tool_call", next_action="Retry with native structured tool calling.")
     calls: list[dict[str, Any]] = []
     spans: list[tuple[int, int]] = []
     block_pattern = re.compile(r"<tool_call>(.*?)(?:</tool_call>|$)", re.IGNORECASE | re.DOTALL)
@@ -210,7 +232,7 @@ def _extract_legacy_tool_calls(content: str) -> tuple[str, tuple[dict[str, Any],
             })
             spans.append((match.start(), match.end()))
     if not calls:
-        return content, ()
+        raise ProviderError("Provider returned an unparseable XML-like tool call.", operation="parse_tool_call", next_action="Retry with native structured tool calling.")
     cleaned = content
     for start, end in reversed(spans):
         cleaned = cleaned[:start] + cleaned[end:]

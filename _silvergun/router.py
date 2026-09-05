@@ -52,7 +52,7 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("triage", ("semantic", "meaning", "stripped", "likely", "triage", "bnql", "query"), ("semantic_search", "query_binary", "get_verification")),
     ("continue", ("continue", "resume", "unresolved", "case file", "next evidence", "pick up", "where was i"), ("notebook_context", "notebook_search", "get_function_context", "get_xrefs", "semantic_search")),
     ("investigate", ("investigate", "audit", "review", "find all", "multiple functions", "analyze", "scan", "detect"), ("find_functions", "fanout_investigate", "boolhunter_quick_scan", "boolhunter_find_category")),
-    ("category", ("category", "find functions related to", "find all", "purchase", "auth", "login", "logout", "network", "payment", "security", "validation", "storage", "premium", "unlock", "entitlement", "subscription", "license", "in-app", "iap"), ("semantic_search", "query_binary", "find_functions", "get_xrefs", "boolhunter_find_category", "boolhunter_quick_scan", "get_function_context")),
+    ("category", ("category", "find functions related to", "find all", "purchase", "auth", "login", "logout", "network", "payment", "security", "validation", "storage", "premium", "unlock", "entitlement", "subscription", "license", "in-app", "iap"), ("semantic_search", "boolhunter_find_category")),
     ("boolean", ("boolean", "is_", "has_", "can_", "check_", "validate_", "enabled", "disabled", "is_active", "is_valid", "security check", "authentication check", "permission check"), ("boolhunter_quick_scan", "boolhunter_analyze", "get_function_context")),
     ("vulnerabilities", ("vulnerability", "vulnerabilities", "vuln", "vulnerable", "exploit", "overflow", "use after", "uaf", "taint", "security"), ("get_function_context", "get_xrefs", "review_vulnerabilities", "boolhunter_quick_scan")),
     ("strings", ("string", "strings", "url", "urls", "http", "https", "ascii", "password", "passwords", "secret", "secrets", "email", "domain", "hostname", "token", "apikey", "api key"), ("bn_search_strings", "find_functions", "get_xrefs")),
@@ -69,7 +69,7 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("plugins", ("plugin", "extension", "capability", "command"), ("get_function_context", "search_capabilities", "invoke_external_command")),
     ("batch_scan", ("batch scan", "scan multiple", "scan all functions", "scan many", "analyze many"), ("boolhunter_batch_scan", "boolhunter_quick_scan")),
     ("binaryninja", ("binary ninja", "bn " , "native", "built-in", "internal"), ("bn_analyze", "bn_decompile", "bn_find_cross_references", "bn_search_strings", "bn_search_symbols", "bn_find_functions", "bn_get_metadata")),
-    ("metadata", ("binary info", "binary metadata", "file info", "architecture", "platform", "entry point"), ("bn_get_metadata", "get_function_context")),
+    ("metadata", ("binary info", "binary metadata", "file info", "information about the currently opened binary", "information about the binary", "currently opened binary", "architecture", "platform", "entry point"), ("bn_get_metadata", "get_function_context")),
 )
 
 

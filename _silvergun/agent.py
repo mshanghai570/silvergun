@@ -57,6 +57,7 @@ ROUTE_GUIDANCE = {
 }
 
 MUTATION_TOOLS = frozenset({"apply_patch", "rename_function", "apply_function_type", "annotate_function", "invoke_external_command"})
+MAX_CAPABILITY_EXECUTIONS = 24
 EVIDENCE_TOOLS = frozenset({
     "get_function_context", "get_xrefs", "get_type_evidence", "review_vulnerabilities",
     "semantic_search", "query_binary", "get_verification", "code_map", "bn_analyze",
@@ -83,12 +84,13 @@ class AgentResult:
 class LeanAgent:
     """A small agent loop with a hard tool-round budget and no planning model call."""
 
-    def __init__(self, client: OpenAICompatibleClient, settings, adapter_registry: AdapterRegistry | None = None, on_event=None) -> None:
+    def __init__(self, client: OpenAICompatibleClient, settings, adapter_registry: AdapterRegistry | None = None, on_event=None, cancel_event=None) -> None:
         self.client = client
         self.settings = settings
         self.router = CapabilityRouter()
         self.adapter_registry = adapter_registry
         self.on_event = on_event
+        self.cancel_event = cancel_event
 
     def run(self, request: str, native: NativeTools) -> AgentResult:
         # Reset event emitter for new investigation
@@ -136,8 +138,15 @@ class LeanAgent:
             tool_call_counts: dict[str, int] = {}
             evidence_collected = False
             evidence_sequence = 0
+            capability_executions = 0
             
             for round_number in range(1, self.settings.max_steps + 1):
+                if self.cancel_event is not None and self.cancel_event.is_set():
+                    self._emit("INVESTIGATION / CANCELLED", "Investigation cancelled before the next capability ran.")
+                    return AgentResult("Investigation cancelled before the next capability ran.", route.intent, round_number - 1)
+                if capability_executions >= MAX_CAPABILITY_EXECUTIONS:
+                    self._emit("INVESTIGATION / EXECUTION BUDGET REACHED", "The capability execution budget was reached; I am synthesizing the evidence collected so far.")
+                    break
                 emit_round_started(round_number, self.settings.max_steps)
                 
                 completion = self.client.chat(self.settings.model, messages, tools)
@@ -169,6 +178,7 @@ class LeanAgent:
                         else:
                             executed.add(signature)
                             tool_call_counts[name] = tool_call_counts.get(name, 0) + 1
+                            capability_executions += 1
                             result = self._execute(name, arguments, native)
                             spec = registry.get(name)
                             if spec is not None:

@@ -35,6 +35,8 @@ The router first classifies the request into a small number of intents: patching
 
 The runtime pipeline is contract-driven: `CapabilityRegistry` assembles the active `CapabilitySpec` records; `plan_from_route` creates and validates `InvestigationPlan`; the agent executes only validated capability IDs; `normalize_result` converts adapter output into `CapabilityResult` and `Evidence`; and `BinaryViewContext` carries the identity of the view used for the investigation. Provider-specific response parsing remains inside the provider client.
 
+The **control plane** (provider tool calls, arguments, plan state, execution state, and structured results) is never sent directly to the sidebar. The provider client returns normalized `ChatCompletion` objects, adapters emit execution events, and the sidebar receives only presentation-safe activity, finding, warning, failure, and completion events. Legacy XML-like or JSON-in-text tool syntax is either normalized at the provider boundary or returned as a structured `ProviderError`; it is never treated as assistant prose.
+
 ## Tool and mutation policy
 
 Native analysis tools collect a compact per-function snapshot built from HLIL, function metadata, callers/callees, strings, variables, and types. Results are hard-capped before entering the model context. External plugin commands are discovered via `PluginCommand.get_valid_list(context)` and may be executed only from an allowlist derived from the current compact capability slice. Write operations are separated from analysis: `apply_patch`, `rename_function`, `apply_function_type`, and `annotate_function` require an affirmative confirmation dialog even when proposed by the model.

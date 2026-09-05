@@ -118,6 +118,15 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(calls[0]["function"]["name"], "bn_search_strings")
         self.assertEqual(json.loads(calls[0]["function"]["arguments"])["max_results"], 30)
 
+    def test_malformed_protocol_is_a_provider_error_not_assistant_text(self):
+        with self.assertRaises(ProviderError):
+            _extract_legacy_tool_calls("The model stopped at <tool_call><arg_key>query</arg_key>")
+
+    def test_json_tool_envelope_is_normalized_at_provider_boundary(self):
+        cleaned, calls = _extract_legacy_tool_calls('{"tool_calls":[{"id":"1","function":{"name":"bn_search_symbols","arguments":"{}"}}]}')
+        self.assertEqual(cleaned, "")
+        self.assertEqual(calls[0]["function"]["name"], "bn_search_symbols")
+
 
 class RouterTests(unittest.TestCase):
     def setUp(self):
@@ -192,6 +201,21 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(route.intent, "category")
         self.assertIn("boolhunter_find_category", route.tools)
         self.assertIn("semantic_search", route.tools)
+
+    def test_exact_related_function_requests_stay_focused(self):
+        for request in (
+            "Find functions related to StoreKit purchases.",
+            "Find functions related to networking.",
+            "Find functions related to authentication.",
+        ):
+            route = CapabilityRouter().route(request, [])
+            self.assertEqual(route.intent, "category")
+            self.assertEqual(route.tools, ("semantic_search", "boolhunter_find_category"))
+
+    def test_open_binary_information_request_uses_metadata(self):
+        route = CapabilityRouter().route("Show me information about the currently opened binary.", [])
+        self.assertEqual(route.intent, "metadata")
+        self.assertIn("bn_get_metadata", route.tools)
 
     def test_named_plugin_request_prioritizes_plugin_execution(self):
         capabilities = [ExternalCapability("advanced", "Advanced Search", "Search functions by semantic category and query", True)]
