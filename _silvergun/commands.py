@@ -15,6 +15,8 @@ from .client import OpenAICompatibleClient, ProviderError
 from .config import api_key, config
 from .external import ExternalCommandIndex
 from .tools import NativeTools
+from .conversation import acknowledgement
+from .router import CapabilityRouter
 
 
 def configure_provider(_bv) -> None:
@@ -92,26 +94,27 @@ def _start(bv, function, request: str) -> None:
     start_request(bv, request, function)
 
 
-def start_request(bv, request: str, function=None, on_complete: Callable[[str], None] | None = None, on_progress: Callable[..., None] | None = None) -> None:
+def start_request(bv, request: str, function=None, on_complete: Callable[[str], None] | None = None, on_progress: Callable[..., None] | None = None, conversation_context: str = "") -> None:
     """Run an investigation on a background task.
 
     on_progress receives (technical, narration): the technical line is a
     detailed event record for the activity stream; narration is the plain-
     English sentence intended for the results panel.
     """
-    AgentTask(bv, function, request, on_complete, on_progress).start()
+    AgentTask(bv, function, request, on_complete, on_progress, conversation_context).start()
 
 
 class AgentTask(BackgroundTaskThread):
     """Moves network/model work off the UI while preserving explicit write confirmation."""
 
-    def __init__(self, bv, function, request: str, on_complete: Callable[[str], None] | None = None, on_progress: Callable[[str], None] | None = None) -> None:
+    def __init__(self, bv, function, request: str, on_complete: Callable[[str], None] | None = None, on_progress: Callable[[str], None] | None = None, conversation_context: str = "") -> None:
         super().__init__("Silvergun: preparing compact context", True)
         self._bv = bv
         self._function = function
         self._request = request
         self._on_complete = on_complete
         self._on_progress = on_progress
+        self._conversation_context = conversation_context
 
     def run(self) -> None:
         try:
@@ -124,9 +127,11 @@ class AgentTask(BackgroundTaskThread):
             native = NativeTools(self._bv, self._function, ExternalCommandIndex(), settings.max_context_chars)
             native.mark_progress("analysis", 0, settings.max_steps, self._request[:240])
             self.progress = "Silvergun: routing and analyzing"
-            result = LeanAgent(client, settings, adapter_registry, on_event=self._event).run(self._request, native)
+            route = CapabilityRouter().route(self._request, native.capabilities)
+            self._event(f"[CONVERSATION] {acknowledgement(self._request, route.intent, route.tools)}")
+            result = LeanAgent(client, settings, adapter_registry, on_event=self._event).run(self._request, native, self._conversation_context)
             native.mark_progress("complete", result.rounds, settings.max_steps, f"Completed {result.intent} investigation.")
-            self._report("Silvergun", f"# Silvergun\n\n**Intent:** `{result.intent}`  \n**Tool rounds:** `{result.rounds}`\n\n{result.answer}")
+            self._report("Silvergun", result.answer)
         except ProviderError as error:
             self._report("Silvergun — Provider Error", f"# Provider error\n\n{error}\n\nUse **Silvergun → Configure Provider...** to verify the endpoint, API key, and model.")
         except Exception as error:
@@ -144,4 +149,4 @@ class AgentTask(BackgroundTaskThread):
 
     def _event(self, technical: str, narration: str | None = None) -> None:
         if self._on_progress is not None:
-            execute_on_main_thread(lambda: self._on_progress(technical, narration))
+            execute_on_main_thread(lambda: self._on_progress(technical, None))

@@ -9,6 +9,7 @@ Silvergun is a Python plugin for Binary Ninja 5.3+ that presents a fast, OpenAI-
 | Layer | Responsibility | Performance boundary |
 | --- | --- | --- |
 | Configuration | Persist non-secret provider preferences in Binary Ninja user settings and API keys through its configured secret provider when available. | Model discovery is debounced and cached by `(base URL, API-key fingerprint)`; no model-list call occurs during normal analysis. |
+| Conversation | Turn a user request into a capability-aware acknowledgement, retain bounded follow-up context, and present the final evidence-backed answer. | Acknowledgements are generated before execution; only the final answer is written to Results. |
 | Provider client | Implement only `GET /models` and `POST /chat/completions` with Python's standard library. | Connection timeout, response limit, and low-temperature bounded completion requests prevent stalls and token bloat. |
 | Capability registry | Build canonical `CapabilitySpec` records for native tools, adapters, and callable plugin commands in the active context. | Each capability has schema, evidence types, prerequisites, execution requirements, adapter, and `AVAILABLE`/`UNAVAILABLE`/`UI_ONLY`/`BROKEN` status. |
 | Planner | Validate a bounded plan against the current registry before the provider sees it. | Unknown, unavailable, or dependency-invalid capabilities are rejected and replanned; keyword routing is only a fallback aid. |
@@ -20,7 +21,8 @@ Silvergun is a Python plugin for Binary Ninja 5.3+ that presents a fast, OpenAI-
 
 ```mermaid
 flowchart LR
-    U[User request] --> R[Capability router]
+    U[User request] --> V[Conversation acknowledgement]
+    V --> R[Capability router]
     R --> C[Relevant tools only]
     C --> A[Bounded agent]
     A --> E[Execution layer]
@@ -29,13 +31,16 @@ flowchart LR
     B --> E
     P --> E
     E --> A
+    A --> S[Evidence-backed final answer]
+    S --> RSL[Results]
+    E -. internal events .-> ACT[Activity / observability]
 ```
 
-The router first classifies the request into a small number of intents: patching, explanation, naming, type recovery, cross-reference analysis, annotation, vulnerability review, command discovery, or general investigation. It then adds the native tools required for that intent and at most a few relevant external plugin commands. The model can ask for `search_capabilities` when the initial slice is insufficient, which prevents every installed plugin from being exposed on every turn.
+The conversation layer first acknowledges the user's actual request using the routed intent and available capability names. The router then classifies the request into a small number of intents: patching, explanation, naming, type recovery, cross-reference analysis, annotation, vulnerability review, command discovery, or general investigation. It adds the native tools required for that intent and at most a few relevant external plugin commands. The model can ask for `search_capabilities` when the initial slice is insufficient, which prevents every installed plugin from being exposed on every turn.
 
 The runtime pipeline is contract-driven: `CapabilityRegistry` assembles the active `CapabilitySpec` records; `plan_from_route` creates and validates `InvestigationPlan`; the agent executes only validated capability IDs; `normalize_result` converts adapter output into `CapabilityResult` and `Evidence`; and `BinaryViewContext` carries the identity of the view used for the investigation. Provider-specific response parsing remains inside the provider client.
 
-The **control plane** (provider tool calls, arguments, plan state, execution state, and structured results) is never sent directly to the sidebar. The provider client returns normalized `ChatCompletion` objects, adapters emit execution events, and the sidebar receives only presentation-safe activity, finding, warning, failure, and completion events. Legacy XML-like or JSON-in-text tool syntax is either normalized at the provider boundary or returned as a structured `ProviderError`; it is never treated as assistant prose.
+The **control plane** (provider tool calls, arguments, plan state, execution state, and structured results) is never sent directly to the sidebar's Results panel. The provider client returns normalized `ChatCompletion` objects, adapters emit execution events, and the sidebar receives technical activity for observability while the Conversation Layer receives only the final assistant answer for Results. Legacy XML-like or JSON-in-text tool syntax is either normalized at the provider boundary or returned as a structured `ProviderError`; it is never treated as assistant prose. Follow-up requests may receive the previous answer as bounded context, but fresh claims still require fresh evidence.
 
 Binary Ninja's Python API does not expose a timeout parameter for HLIL materialization. `bn_decompile` therefore reports the requested timeout and this limitation, bounds the returned HLIL text to 6,000 characters, and distinguishes unavailable HLIL from successful decompilation; it does not claim to enforce a fake wall-clock timeout. `bn_analyze` treats an explicit address as highest priority, `function_only` or the selected function as a single-function operation, and `full_analysis=True` as the only request for bounded whole-binary analysis.
 

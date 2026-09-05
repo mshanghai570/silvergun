@@ -92,7 +92,7 @@ class LeanAgent:
         self.on_event = on_event
         self.cancel_event = cancel_event
 
-    def run(self, request: str, native: NativeTools) -> AgentResult:
+    def run(self, request: str, native: NativeTools, conversation_context: str = "") -> AgentResult:
         # Reset event emitter for new investigation
         reset_event_emitter()
         
@@ -132,7 +132,7 @@ class LeanAgent:
         try:
             messages: list[dict[str, Any]] = [
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": self._request_message(request, route, native.context_hint(), native.notebook_context(), registry, plan)},
+                {"role": "user", "content": self._request_message(request, route, native.context_hint(), native.notebook_context(), registry, plan, conversation_context)},
             ]
             executed: set[str] = set()
             tool_call_counts: dict[str, int] = {}
@@ -227,16 +227,15 @@ class LeanAgent:
     def _forward_event(self, event: InvestigationEvent) -> None:
         """Forward events from the global emitter to the agent's on_event callback.
 
-        Delivers a (technical, narration) pair: the technical line feeds the
-        activity stream while the plain-English narration feeds the results
-        panel so the user can follow along in plain language.
+        Investigation events are observability output.  They must never be
+        mistaken for Silvergun's canonical conversational answer.
         """
         if self.on_event:
-            self.on_event(EventFormatter.format_event(event), EventFormatter.narrate(event))
+            self.on_event(EventFormatter.format_event(event), None)
 
     def _emit(self, message: str, narration: str | None = None) -> None:
         if self.on_event is not None:
-            self.on_event(message, narration)
+            self.on_event(message, None)
 
     def _execute(self, name: str, arguments: dict[str, Any], native: NativeTools) -> str:
         try:
@@ -292,7 +291,7 @@ class LeanAgent:
         return completion.content.strip() or "No review returned."
 
     @staticmethod
-    def _request_message(request: str, route: Route, context_hint: str, notebook_context: str = "", registry: CapabilityRegistry | None = None, plan=None) -> str:
+    def _request_message(request: str, route: Route, context_hint: str, notebook_context: str = "", registry: CapabilityRegistry | None = None, plan=None, conversation_context: str = "") -> str:
         extension_section = ""
         if route.external:
             cards = "\n".join(capability.card() for capability in route.external)
@@ -304,7 +303,8 @@ class LeanAgent:
             capability_section = f"\n\nValidated capability plan (use only these available capabilities):\n{steps}\n{cards}"
         guidance = ROUTE_GUIDANCE.get(route.intent, "Gather the smallest relevant evidence before answering and state uncertainty explicitly.")
         case_section = f"\n\nRestored local case-file context (treat as leads and re-verify):\n{notebook_context}" if notebook_context and not notebook_context.startswith("No notebook") else ""
-        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.\nOperational directive: {guidance}{capability_section}{case_section}{extension_section}"
+        conversation_section = f"\n\nConversation context (use only to understand this follow-up; re-verify with tools):\n{conversation_context[:8000]}" if conversation_context else ""
+        return f"BinaryView context: {context_hint}\n\nRequest: {request}\nRouted intent: {route.intent}.\nOperational directive: {guidance}{capability_section}{case_section}{extension_section}{conversation_section}"
 
 
 def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:

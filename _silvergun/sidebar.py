@@ -20,6 +20,7 @@ from .notebook import AnalysisNotebook
 from .theme import CONSOLE_STYLESHEET, mark
 from .tools import TOOL_SCHEMAS
 from .events import get_event_emitter, reset_event_emitter, EventFormatter, InvestigationEvent
+from .conversation import ConversationState
 
 
 def _view_from_frame(view_frame):
@@ -61,6 +62,8 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._data = data
         self._capability_labels: list[QLabel] = []
         self._last_narration = ""
+        self._conversation = ConversationState()
+        self._active_request = ""
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -195,7 +198,7 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._activity.setMaximumHeight(150)  # Increased height for better visibility
         self._activity.setPlaceholderText("Tool activity will appear here.")
         self._activity.setPlainText("[00:00:00] CONSOLE ONLINE\n[00:00:00] AWAITING INVESTIGATION")
-        activity_label = QLabel("ACTIVITY STREAM")
+        activity_label = QLabel("ACTIVITY / INTERNAL INVESTIGATION ACTIVITY")
         mark(activity_label, "eyebrow")
         content_layout.addWidget(activity_label)
         content_layout.addWidget(self._activity)
@@ -203,8 +206,8 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._result = QPlainTextEdit()
         self._result.setReadOnly(True)
         self._result.setMinimumHeight(200)
-        self._result.setPlaceholderText("Analysis results will appear here...")
-        result_label = QLabel("RESULTS")
+        self._result.setPlaceholderText("Silvergun's answer will appear here...")
+        result_label = QLabel("RESULTS / SILVERGUN'S ANSWER")
         mark(result_label, "eyebrow")
         content_layout.addWidget(result_label)
         content_layout.addWidget(self._result)
@@ -449,9 +452,10 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._prompt.clear()
         self._status.setText("SCANNING / ANALYZING / CAPABILITY STANDBY")
         self._activity.setPlainText("[00:00:00] CONSOLE ONLINE\n[00:00:00] AWAITING INVESTIGATION")
-        self._result.setPlainText(f"REQUEST / {request}\n")
+        self._result.setPlainText("Waiting for Silvergun's answer…")
         self._last_narration = ""
-        start_request(view, request, self._function(), self._completed, self._stream_update)
+        self._active_request = request
+        start_request(view, request, self._function(), self._completed, self._stream_update, self._conversation.context_for_follow_up())
 
     def _ask(self) -> None:
         self._submit(self._prompt.toPlainText())
@@ -512,6 +516,8 @@ class SilvergunSidebarWidget(SidebarWidget):
         self._status.setText("ANALYSIS FAILED / REVIEW OUTPUT" if failed else "ANALYSIS COMPLETE / RESULTS LOCKED")
         self._activity.appendPlainText("\n[COMPLETE]" if not failed else "\n[FAILED]")
         self._result.setPlainText(markdown)
+        if not failed:
+            self._conversation.remember(self._active_request, markdown, "")
         
         # Reset tool highlighting after investigation completes
         self._reset_tool_highlights()
@@ -526,6 +532,10 @@ class SilvergunSidebarWidget(SidebarWidget):
                 label.style().polish(label)
 
     def _stream_update(self, technical: str, narration: str | None = None) -> None:
+        if technical.startswith("[CONVERSATION] "):
+            self._result.setPlainText(technical.removeprefix("[CONVERSATION] ").strip())
+            self._status.setText("ACKNOWLEDGED / INVESTIGATION RUNNING")
+            return
         # Technical event line feeds the ACTIVITY stream.
         formatted_message = self._format_activity_message(technical)
         self._activity.appendPlainText(formatted_message)
@@ -539,21 +549,7 @@ class SilvergunSidebarWidget(SidebarWidget):
         scrollbar = self._activity.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
-        # Plain-English narration goes to the RESULTS panel so the user can
-        # follow what Silvergun is doing while the investigation runs. When no
-        # narration was produced (legacy single-argument callers), fall back to
-        # the technical line so updates still surface.
-        if narration is None:
-            narration = technical
-        if narration and narration != self._last_narration:
-            self._last_narration = narration
-            current = self._result.toPlainText()
-            if current and not current.endswith("\n"):
-                current += "\n"
-            self._result.setPlainText((current + f"• {narration}")[-32000:])
-            result_scrollbar = self._result.verticalScrollBar()
-            result_scrollbar.setValue(result_scrollbar.maximum())
-            self._status.setText(f"WORKING / {narration[:44].upper()}")
+        self._status.setText("INVESTIGATING / SEE ACTIVITY")
     
     def _format_activity_message(self, message: str) -> str:
         """Format activity message for consistent display in the stream."""
