@@ -215,7 +215,7 @@ class RouterTests(unittest.TestCase):
     def test_open_binary_information_request_uses_metadata(self):
         route = CapabilityRouter().route("Show me information about the currently opened binary.", [])
         self.assertEqual(route.intent, "metadata")
-        self.assertIn("bn_get_metadata", route.tools)
+        self.assertEqual(route.tools, ("bn_get_metadata",))
 
     def test_named_plugin_request_prioritizes_plugin_execution(self):
         capabilities = [ExternalCapability("advanced", "Advanced Search", "Search functions by semantic category and query", True)]

@@ -69,7 +69,7 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("plugins", ("plugin", "extension", "capability", "command"), ("get_function_context", "search_capabilities", "invoke_external_command")),
     ("batch_scan", ("batch scan", "scan multiple", "scan all functions", "scan many", "analyze many"), ("boolhunter_batch_scan", "boolhunter_quick_scan")),
     ("binaryninja", ("binary ninja", "bn " , "native", "built-in", "internal"), ("bn_analyze", "bn_decompile", "bn_find_cross_references", "bn_search_strings", "bn_search_symbols", "bn_find_functions", "bn_get_metadata")),
-    ("metadata", ("binary info", "binary metadata", "file info", "information about the currently opened binary", "information about the binary", "currently opened binary", "architecture", "platform", "entry point"), ("bn_get_metadata", "get_function_context")),
+    ("metadata", ("binary info", "binary metadata", "file info", "information about the currently opened binary", "information about the binary", "currently opened binary", "architecture", "platform", "entry point"), ("bn_get_metadata",)),
 )
 
 

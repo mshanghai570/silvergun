@@ -111,12 +111,12 @@ class LeanAgent:
         try:
             plan = plan_from_route(request, route.intent, route.tools, registry)
         except PlanValidationError as error:
-            self._emit("PLAN / INVALID / REPLANNING", f"The first plan was invalid, so I am rebuilding it from currently available capabilities: {error.message}")
+            self._emit("[PLANNER] Replanning from currently available capabilities", "The initial plan was invalid, so I am rebuilding it from the active capability registry.")
             valid_tools = tuple(tool for tool in route.tools if registry.get(tool) and registry.get(tool).available)
             plan = plan_from_route(request, route.intent, valid_tools, registry)
 
         selected_tools = tuple(step.capability_id for step in plan.steps)
-        self._emit(f"PLAN / VALIDATED / {len(selected_tools)} STEPS", f"I mapped this to a {plan.intent} investigation using {len(selected_tools)} currently available capabilities.")
+        self._emit(f"[PLANNER] Validated {len(selected_tools)} capabilities for {plan.intent}", f"I mapped this to a focused {plan.intent} investigation using currently available capabilities.")
 
         tools = native.definitions(selected_tools)
         if self.adapter_registry:
@@ -152,7 +152,7 @@ class LeanAgent:
                 completion = self.client.chat(self.settings.model, messages, tools)
                 if not completion.tool_calls:
                     answer = completion.content.strip() or "The model returned no answer."
-                    self._emit(f"MODEL / FINAL RESPONSE / ROUND {round_number}", "I have enough evidence — writing up the final answer now.")
+                    self._emit("[FINAL] Evidence collected; preparing the answer", "I have enough evidence — writing up the final answer now.")
                     emit_investigation_complete(route.intent, f"Investigation completed in {round_number} rounds")
                     return AgentResult(answer, route.intent, round_number)
                 
@@ -201,7 +201,6 @@ class LeanAgent:
                                 )
                             emit_tool_result(name, f"Completed {name}", {"length": len(result)})
                         
-                        self._emit(f"TOOL / {name.upper()}\n{result[:900]}", "")
                     except (TypeError, ValueError, json.JSONDecodeError) as error:
                         result = f"Tool request rejected: {error}. Continue with a valid tool call or answer directly."
                         emit_tool_failed(name, f"Request rejected: {error}", str(error))
@@ -209,7 +208,7 @@ class LeanAgent:
             
             final = self.client.chat(self.settings.model, messages, ())
             answer = final.content.strip() or "Tool budget reached. Review the collected tool results."
-            self._emit("MODEL / TOOL BUDGET REACHED / FINALIZING", "That was my last tool round — wrapping up with what I've gathered.")
+            self._emit("[FINAL] Capability budget reached; synthesizing collected evidence", "That was the last capability round — wrapping up with what I've gathered.")
             emit_investigation_complete(route.intent, f"Tool budget reached after {self.settings.max_steps} rounds")
             emit_final_synthesis(answer, route.intent)
             return AgentResult(answer, route.intent, self.settings.max_steps)

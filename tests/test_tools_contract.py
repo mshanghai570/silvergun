@@ -161,6 +161,31 @@ class NativeToolsTests(unittest.TestCase):
         result = LeanAgent(Client(), Settings()).run("Explain this function", self.tools)
         self.assertEqual(result.answer, "Recovered after malformed tool call.")
 
+    def test_tool_results_are_not_forwarded_as_raw_activity_text(self):
+        class Settings:
+            max_steps = 2
+            parallel_jobs = 1
+            model = "test-model"
+
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, _model, _messages, _tools, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    call = {"id": "context", "function": {"name": "get_function_context", "arguments": "{}"}}
+                    return type("Completion", (), {"content": "Internal planning text", "tool_calls": (call,)})()
+                return type("Completion", (), {"content": "Clean final answer.", "tool_calls": ()})()
+
+        events = []
+        result = LeanAgent(Client(), Settings(), on_event=lambda technical, narration: events.append((technical, narration))).run("Explain this function", self.tools)
+        self.assertEqual(result.answer, "Clean final answer.")
+        combined = "\n".join(technical for technical, _ in events)
+        self.assertNotIn('"address":', combined)
+        self.assertNotIn("<tool_call>", combined)
+        self.assertNotIn("<arg_key>", combined)
+
     def test_mutation_is_blocked_until_evidence_is_collected(self):
         class Settings:
             max_steps = 3
