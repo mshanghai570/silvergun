@@ -41,6 +41,13 @@ class AdapterRegistry:
         cls._instance = None
 
     def discover(self, bv, function=None) -> None:
+        # Adapter constructors may inspect BinaryView state (and third-party
+        # plugins may do more than the lightweight registry contract). Keep
+        # discovery serialized with Binary Ninja even when called by the
+        # background investigation task.
+        return on_binary_ninja_thread(lambda: self._discover(bv, function))
+
+    def _discover(self, bv, function=None) -> None:
         context_key = ((id(bv) if bv is not None else None), getattr(function, "start", None))
         if self._discovered and self._context_key == context_key:
             return

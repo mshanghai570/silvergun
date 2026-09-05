@@ -90,6 +90,7 @@ class NativeTools:
         self.external = external
         self.max_context_chars = max(4000, max_context_chars)
         self._triage_index: list[tuple[Any, str, str]] | None = None
+        self._snapshot_cache: dict[int, dict[str, Any]] = {}
         # AgentTask runs on a BackgroundTaskThread. Plugin-command discovery and
         # every BinaryView access must be marshalled to Binary Ninja's API thread.
         self.capabilities: list[ExternalCapability] = _on_main_thread(lambda: external.refresh(bv, function))
@@ -108,7 +109,9 @@ class NativeTools:
         platform = str(getattr(getattr(self.bv, "platform", None), "name", ""))
         image_base = getattr(self.bv, "start", None)
         entry = getattr(self.bv, "entry_point", None)
-        current = self._snapshot(self.function) if self.function is not None else None
+        # Avoid materializing HLIL during request setup; deferred analysis can
+        # be expensive and should happen only when evidence is requested.
+        current = self._function_header(self.function) if self.function is not None else None
 
         file_format = ""
         try:
@@ -199,14 +202,34 @@ class NativeTools:
         for address in unique[:8]:
             func = self._function_at(address)
             if func is not None:
-                snapshots.append(self._snapshot(func))
+                snapshots.append(self._cached_snapshot(func))
         return snapshots
+
+    @staticmethod
+    def _function_header(func) -> dict[str, Any]:
+        return {
+            "address": hex(func.start),
+            "name": str(getattr(func, "name", "")),
+            "signature": str(getattr(func, "type", "")),
+        }
+
+    def _cached_snapshot(self, func) -> dict[str, Any]:
+        address = int(func.start)
+        snapshot = self._snapshot_cache.get(address)
+        if snapshot is None:
+            snapshot = self._snapshot(func)
+            self._snapshot_cache[address] = snapshot
+        return snapshot
+
+    def _invalidate_snapshot(self, address: int) -> None:
+        self._snapshot_cache.pop(int(address), None)
+        self._triage_index = None
 
     def _context(self, args: dict[str, Any]) -> str:
         func = self._resolve(args)
         if func is None:
             return "No function exists at that address."
-        return json.dumps(self._snapshot(func), separators=(",", ":"))
+        return json.dumps(self._cached_snapshot(func), separators=(",", ":"))
 
     def _find_functions(self, args: dict[str, Any]) -> str:
         query = str(args.get("query", "")).strip().lower()
@@ -248,7 +271,7 @@ class NativeTools:
         func = self._resolve(args)
         if func is None:
             return "No function exists at that address."
-        snapshot = self._snapshot(func)
+        snapshot = self._cached_snapshot(func)
         text = snapshot.get("hlil", "").lower()
         patterns = {
             "unbounded-copy": ("strcpy", "strcat", "gets"),
@@ -318,7 +341,7 @@ class NativeTools:
         func = self._resolve(args)
         if func is None:
             return json.dumps({"proven": [], "inferred": [], "status": "no target"}, separators=(",", ":"))
-        snapshot = self._snapshot(func)
+        snapshot = self._cached_snapshot(func)
         return json.dumps({"status": "evidence attached", "proven": [{"claim": "Function exists in the active BinaryView", "source": f"BinaryView function table at {snapshot['address']}"}, {"claim": "Current signature", "value": snapshot["signature"], "source": f"Function.type at {snapshot['address']}"}, {"claim": "HLIL is available", "source": f"HLIL instructions at {snapshot['address']}" if snapshot["hlil"] else "No HLIL returned"}], "inferred": [{"claim": "Behavioral interpretation", "note": "Must be supported by the cited HLIL, xrefs, or memory evidence."}], "evidence": snapshot["evidence"]}, separators=(",", ":"))
 
     def _code_map(self, args: dict[str, Any]) -> str:
@@ -423,6 +446,10 @@ class NativeTools:
         emit_tool_progress("invoke_external_command", f"Executing: {capability.name}")
         try:
             result = self.external.execute(identifier, self.bv, self.function)
+            # A third-party command may change names, types, or analysis state;
+            # do not let a later Silvergun read use stale host evidence.
+            self._snapshot_cache.clear()
+            self._triage_index = None
             emit_tool_result("invoke_external_command", f"Plugin command completed: {capability.name}", {"result": result})
             emit_tool_completed("invoke_external_command", f"Completed: {capability.name}")
             return result
@@ -443,6 +470,7 @@ class NativeTools:
         if not self._confirm("Apply Silvergun Patch", prompt):
             return "User declined the patch."
         written = self.bv.write(address, replacement)
+        self._invalidate_snapshot(address)
         return f"Patch {'applied' if written == len(replacement) else 'partially applied'} at {hex(address)} ({written}/{len(replacement)} bytes)."
 
     @_main_thread
@@ -454,6 +482,7 @@ class NativeTools:
         if not self._confirm("Rename Function", f"Rename {func.name} at {hex(func.start)} to {name}?\n\nReason: {args.get('reason', '')}"):
             return "User declined the rename."
         func.name = name
+        self._invalidate_snapshot(func.start)
         return f"Renamed function at {hex(func.start)} to {name}."
 
     @_main_thread
@@ -467,6 +496,7 @@ class NativeTools:
         try:
             parsed = self.bv.parse_type_string(declaration)
             func.type = parsed[0] if isinstance(parsed, tuple) else parsed
+            self._invalidate_snapshot(func.start)
         except Exception as error:
             return f"Binary Ninja could not parse the declaration: {error}"
         return f"Applied type to {func.name}: {declaration}"

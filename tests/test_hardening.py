@@ -90,6 +90,41 @@ class HardeningTests(unittest.TestCase):
         unavailable = json.loads(adapter.execute("bn_decompile", {"address": "0x1000"}))
         self.assertEqual(unavailable["status"], "unavailable_hlil")
 
+    def test_context_hint_does_not_materialize_hlil(self):
+        class LazyFunction(Function):
+            def __init__(self, address, name):
+                super().__init__(address, name)
+                self.hlil_reads = 0
+
+            @property
+            def hlil(self):
+                self.hlil_reads += 1
+                return [[Instruction("return 1")]]
+
+            @hlil.setter
+            def hlil(self, value):
+                self._hlil = value
+
+        function = LazyFunction(0x1000, "purchase")
+        view = View([function])
+        from _silvergun.tools import NativeTools
+        native = NativeTools(view, function, ExternalCommandIndex(), 8000)
+        json.loads(native.context_hint())
+        self.assertEqual(function.hlil_reads, 0)
+
+    def test_native_snapshot_is_reused_within_investigation(self):
+        function = Function(0x1000, "purchase")
+        function.type = "void purchase()"
+        view = View([function])
+        from _silvergun.tools import NativeTools
+        native = NativeTools(view, function, ExternalCommandIndex(), 8000)
+        calls = []
+        original = native._snapshot
+        native._snapshot = lambda target: (calls.append(target.start) or original(target))
+        native.execute("get_function_context", {})
+        native.execute("get_verification", {})
+        self.assertEqual(calls, [0x1000])
+
     def test_analyze_modes_do_not_claim_zero_work(self):
         function = Function(0x1000, "purchase")
         view = View([function])

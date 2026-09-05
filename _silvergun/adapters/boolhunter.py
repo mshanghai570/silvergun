@@ -221,9 +221,12 @@ class BoolHunterAdapter:
 
         candidates = []
         scanned = 0
-        total_functions = min(2000, len(list(self._bv.functions)))
+        # Materialize the bounded slice once; counting and iterating
+        # separately causes two BinaryView traversals.
+        functions = list(self._bv.functions)[:2000]
+        total_functions = len(functions)
         
-        for func in self._bv.functions[:2000]:
+        for func in functions:
             scanned += 1
             
             # Emit progress every 100 functions or when we have candidates
@@ -368,9 +371,11 @@ class BoolHunterAdapter:
 
         candidates = []
         scanned = 0
-        total_functions = min(2000, len(list(self._bv.functions)))
+        # Reuse one bounded host traversal for the count and scan.
+        functions = list(self._bv.functions)[:2000]
+        total_functions = len(functions)
         
-        for func in self._bv.functions[:2000]:
+        for func in functions:
             scanned += 1
             
             # Emit progress periodically
