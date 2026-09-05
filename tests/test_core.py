@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from _silvergun.client import OpenAICompatibleClient, ProviderError
+from _silvergun.client import OpenAICompatibleClient, ProviderError, _extract_legacy_tool_calls
 from _silvergun.router import CapabilityRouter, ExternalCapability
 
 
@@ -111,6 +111,13 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(ProviderHandler.last_body["temperature"], 0.1)
         self.assertNotIn("max_completion_tokens", ProviderHandler.last_body)
 
+    def test_legacy_xml_tool_markup_is_promoted_to_a_tool_call(self):
+        content = "Key observation: strings found. <tool_call>tool_call>bn_search_strings<arg_key>pattern</arg_key><arg_value>https://</arg_value><arg_key>max_results</arg_key><arg_value>30</arg_value></tool_call>"
+        cleaned, calls = _extract_legacy_tool_calls(content)
+        self.assertEqual(cleaned, "Key observation: strings found.")
+        self.assertEqual(calls[0]["function"]["name"], "bn_search_strings")
+        self.assertEqual(json.loads(calls[0]["function"]["arguments"])["max_results"], 30)
+
 
 class RouterTests(unittest.TestCase):
     def setUp(self):
@@ -179,6 +186,12 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(route.tools[0], "get_function_context")
         self.assertIn("search_capabilities", route.tools)
         self.assertIn("invoke_external_command", route.tools)
+
+    def test_purchase_search_uses_category_discovery(self):
+        route = CapabilityRouter().route("Find purchase related functions", [])
+        self.assertEqual(route.intent, "category")
+        self.assertIn("boolhunter_find_category", route.tools)
+        self.assertIn("semantic_search", route.tools)
 
     def test_smart_patch_route_is_mutation_specific(self):
         route = CapabilityRouter().route("Review this function for a precise smart patch. Explain the fix first.", [])

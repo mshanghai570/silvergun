@@ -40,7 +40,7 @@ def install_binaryninja_stub():
 
 install_binaryninja_stub()
 from _silvergun import tools as tools_module
-from _silvergun.agent import LeanAgent
+from _silvergun.agent import LeanAgent, _tool_call
 from _silvergun.external import ExternalCommandIndex
 from _silvergun.tools import NativeTools, _hex_bytes
 
@@ -186,6 +186,13 @@ class NativeToolsTests(unittest.TestCase):
         self.assertEqual(_hex_bytes("0x90 0xCC"), b"\x90\xcc")
         with self.assertRaises(ValueError):
             _hex_bytes("90 not-bytes")
+
+    def test_provider_tool_aliases_are_normalized_before_dispatch(self):
+        name, arguments = _tool_call({"function": {"name": "search_strings", "arguments": '{"pattern":"purchase"}'}})
+        self.assertEqual(name, "bn_search_strings")
+        self.assertEqual(arguments["query"], "purchase")
+        name, _ = _tool_call({"function": {"name": "notebook_add", "arguments": "{}"}})
+        self.assertEqual(name, "notebook_record")
 
     def test_find_functions_requires_a_real_query(self):
         empty = json.loads(self.tools.execute("find_functions", {"query": ""}))

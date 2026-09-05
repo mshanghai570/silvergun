@@ -113,6 +113,18 @@ CATEGORY_KEYWORDS = {
 }
 
 
+def _canonical_category(value: Any) -> str:
+    raw = str(value or "").strip()
+    aliases = {
+        "purchase": "Purchases", "purchases": "Purchases", "payment": "Purchases", "payments": "Purchases",
+        "authentication": "Authentication & Security", "auth": "Authentication & Security", "security": "Authentication & Security",
+        "network": "Network & Communication", "networking": "Network & Communication", "communication": "Network & Communication",
+        "files": "Files & Storage", "storage": "Files & Storage", "ui": "UI & Interaction", "interface": "UI & Interaction",
+        "navigation": "Navigation & Location", "location": "Navigation & Location", "validation": "Validation & State", "state": "Validation & State",
+    }
+    return aliases.get(raw.lower(), raw)
+
+
 class BoolHunterAdapter:
     __slots__ = ("_bv", "_engine", "_available", "_error")
 
@@ -201,7 +213,7 @@ class BoolHunterAdapter:
         return json.dumps({"error": f"Unknown tool: {name}"})
 
     def _quick_scan(self, args: dict[str, Any]) -> str:
-        category_filter = args.get("category")
+        category_filter = _canonical_category(args.get("category")) or None
         min_score = max(0, min(100, args.get("min_score", 1)))
         max_results = max(1, min(64, args.get("max_results", 24)))
 
@@ -342,7 +354,7 @@ class BoolHunterAdapter:
         }, separators=(",", ":"))
 
     def _find_category(self, args: dict[str, Any]) -> str:
-        category = args.get("category", "Other")
+        category = _canonical_category(args.get("category", "Other"))
         min_score = max(0, min(100, args.get("min_score", 1)))
         max_results = max(1, min(48, args.get("max_results", 16)))
 

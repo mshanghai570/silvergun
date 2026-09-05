@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import os
+import re
 import ssl
 from typing import Any, Iterable, Mapping, Protocol
 from urllib.error import HTTPError, URLError
@@ -89,6 +90,8 @@ class OpenAICompatibleClient:
         content = _text_content(message.get("content", "")) if isinstance(message, dict) else ""
         calls = message.get("tool_calls", []) if isinstance(message, dict) else []
         tool_calls = tuple(call for call in calls if isinstance(call, dict)) if isinstance(calls, list) else ()
+        content, legacy_calls = _extract_legacy_tool_calls(content)
+        tool_calls = tool_calls + legacy_calls
         return ChatCompletion(content, tool_calls, choice.get("finish_reason"), payload)
 
     def _chat_request(self, body: dict[str, Any], max_tokens: int) -> dict[str, Any]:
@@ -173,6 +176,48 @@ def _text_content(content: Any) -> str:
             item.get("text", "") for item in content if isinstance(item, dict) and isinstance(item.get("text"), str)
         )
     return ""
+
+
+def _extract_legacy_tool_calls(content: str) -> tuple[str, tuple[dict[str, Any], ...]]:
+    """Convert common XML-like tool markup emitted by older compatible models.
+
+    Some providers return strings such as ``<tool_call>bn_search_strings`` in
+    ``message.content`` instead of using the OpenAI ``tool_calls`` field. Keep
+    the compatibility path deliberately narrow: only a tool block containing
+    ``arg_key``/``arg_value`` pairs is promoted to an executable call.
+    """
+    if "<tool_call>" not in content or "<arg_key>" not in content:
+        return content, ()
+    calls: list[dict[str, Any]] = []
+    spans: list[tuple[int, int]] = []
+    block_pattern = re.compile(r"<tool_call>(.*?)(?:</tool_call>|$)", re.IGNORECASE | re.DOTALL)
+    for match in block_pattern.finditer(content):
+        block = match.group(1)
+        name_match = re.search(r"(?:^|>)([A-Za-z_][A-Za-z0-9_-]*)\s*<arg_key>", block, re.IGNORECASE)
+        if not name_match:
+            continue
+        arguments: dict[str, Any] = {}
+        for argument in re.finditer(r"<arg_key>\s*(.*?)\s*</arg_key>\s*<arg_value>\s*(.*?)\s*</arg_value>", block, re.IGNORECASE | re.DOTALL):
+            key = argument.group(1).strip()
+            raw_value = re.sub(r"<[^>]+>", "", argument.group(2)).strip()
+            try:
+                value: Any = json.loads(raw_value)
+            except json.JSONDecodeError:
+                value = raw_value
+            arguments[key] = value
+        if arguments:
+            calls.append({
+                "id": f"legacy_call_{len(calls) + 1}",
+                "type": "function",
+                "function": {"name": name_match.group(1), "arguments": json.dumps(arguments, separators=(",", ":"))},
+            })
+            spans.append((match.start(), match.end()))
+    if not calls:
+        return content, ()
+    cleaned = content
+    for start, end in reversed(spans):
+        cleaned = cleaned[:start] + cleaned[end:]
+    return cleaned.strip(), tuple(calls)
 
 
 def _uses_completion_token_limit(model: str) -> bool:

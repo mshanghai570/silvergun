@@ -33,7 +33,9 @@ the goal includes a mutation (patch, rename, type, annotation) propose it with t
 tool — every mutation asks the user for approval before anything is written. When a request is
 about specific text content (strings, URLs, passwords, secrets) prefer bn_search_strings; when
 it is about symbols or function names prefer bn_search_symbols or bn_find_functions; then use
-get_xrefs to see who uses the matches. Do not repeat a tool call that returned the same data;
+get_xrefs to see who uses the matches. For semantic categories, use canonical BoolHunter values
+such as Purchases, Authentication & Security, or Network & Communication; notebook_record is the
+durable-finding tool. Do not repeat a tool call that returned the same data;
 move to the next step or answer."""
 
 ROUTE_GUIDANCE = {
@@ -45,7 +47,7 @@ ROUTE_GUIDANCE = {
     "vulnerabilities": "Treat detector hits as leads only; report the matched operation, reachability question, and missing proof.",
     "investigate": "Decompose the objective into bounded, evidence-producing sub-investigations and synthesize only after tool results.",
     "boolean": "Use BoolHunter to find boolean functions matching the request. Analyze candidates for evidence-based scoring.",
-    "category": "Use BoolHunter to find functions by semantic category. Return categorized results with confidence scores.",
+    "category": "Search the category with semantic_search, query_binary, and Binary Ninja evidence, then use BoolHunter's category tool as an additional signal. Use canonical labels such as Purchases, Authentication & Security, or Network & Communication. Return the actual matching functions, addresses, evidence, provider counts, and confidence; zero results from one provider are not proof that the category is absent.",
     "batch_scan": "Use BoolHunter batch_scan to analyze multiple functions efficiently.",
     "strings": "Use bn_search_strings to locate string evidence, then find_functions or get_xrefs to see who references the matches.",
     "symbols": "Use bn_search_symbols or bn_find_functions to locate name-based evidence, then get_xrefs for call context.",
@@ -60,6 +62,13 @@ EVIDENCE_TOOLS = frozenset({
     "bn_find_functions", "boolhunter_quick_scan", "boolhunter_analyze", "boolhunter_batch_scan",
     "boolhunter_find_category", "fanout_investigate", "search_capabilities", "invoke_external_command",
 })
+TOOL_ALIASES = {
+    "search_strings": "bn_search_strings",
+    "search_symbols": "bn_search_symbols",
+    "find_category": "boolhunter_find_category",
+    "notebook_add": "notebook_record",
+    "notebook_save": "notebook_record",
+}
 
 
 @dataclass(frozen=True)
@@ -257,10 +266,14 @@ def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     name = function.get("name")
     if not isinstance(name, str):
         raise ValueError("tool call had no name")
+    name = TOOL_ALIASES.get(name.strip(), name.strip())
     raw = function.get("arguments", "{}")
     arguments = json.loads(raw) if isinstance(raw, str) else raw
     if not isinstance(arguments, dict):
         raise ValueError("tool arguments must be an object")
+    if name == "bn_search_strings" and "query" not in arguments and "pattern" in arguments:
+        arguments = dict(arguments)
+        arguments["query"] = arguments.pop("pattern")
     return name, arguments
 
 
