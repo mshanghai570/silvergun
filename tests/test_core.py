@@ -193,6 +193,14 @@ class RouterTests(unittest.TestCase):
         self.assertIn("boolhunter_find_category", route.tools)
         self.assertIn("semantic_search", route.tools)
 
+    def test_named_plugin_request_prioritizes_plugin_execution(self):
+        capabilities = [ExternalCapability("advanced", "Advanced Search", "Search functions by semantic category and query", True)]
+        route = CapabilityRouter().route("Use Advanced Search plugin to help find purchase functions", capabilities)
+        self.assertEqual(route.intent, "search")
+        self.assertIn("search_capabilities", route.tools)
+        self.assertIn("invoke_external_command", route.tools)
+        self.assertEqual(route.external[0].identifier, "advanced")
+
     def test_smart_patch_route_is_mutation_specific(self):
         route = CapabilityRouter().route("Review this function for a precise smart patch. Explain the fix first.", [])
         self.assertEqual(route.intent, "patch")

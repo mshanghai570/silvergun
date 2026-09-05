@@ -39,7 +39,7 @@ durable-finding tool. Do not repeat a tool call that returned the same data;
 move to the next step or answer."""
 
 ROUTE_GUIDANCE = {
-    "search": "Treat this as a provider-neutral search. Start with search_capabilities when the request mentions a plugin or plugin type, then compare the relevant installed-plugin commands with Binary Ninja's native search tools and Silvergun's local semantic/query tools. BoolHunter is only one optional provider; never assume it is the right or only searcher. If one provider returns zero results, try the other relevant providers before concluding that nothing matched.",
+    "search": "Treat this as a provider-neutral search. If the user names a plugin, use search_capabilities to resolve that exact installed capability, then invoke_external_command when it is available and approved. Also compare the plugin result with Binary Ninja's native search tools and Silvergun's local semantic/query tools when the request asks to find functions. BoolHunter is only one optional provider; never assume it is the right or only searcher. If one provider returns zero results, try the other relevant providers before concluding that nothing matched.",
     "triage": "Triage locally first; return a ranked shortlist with the exact matching evidence for each function.",
     "verify": "Verify before interpreting; label every statement PROVEN, INFERRED, or HYPOTHESIS and cite a host source.",
     "map": "Build the relationship map before explaining control flow; distinguish observed edges from behavioral guesses.",

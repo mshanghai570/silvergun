@@ -104,6 +104,7 @@ class CapabilityRouter:
         has_mutation = _has_mutation_intent(normalized)
         explicit_provider_search = any(term in normalized for term in ("all plugins", "any plugin", "find a plugin", "plugin that", "plugin which", "plugin type"))
         generic_function_search = normalized in ("search functions", "search for functions", "locate functions")
+        named_plugin_request = bool(re.search(r"(?:use|using|with)\s+(?!(?:a|the)\s+)[a-z0-9][a-z0-9 _-]{2,}\s+plugin", normalized))
         explicit_smart_patch = any(term in normalized for term in ("smart patch", "precise patch", "patch this function"))
         explicit_xrefs = any(term in normalized for term in ("callers and callees", "caller and callee", "cross reference", "cross-reference"))
         
@@ -115,6 +116,8 @@ class CapabilityRouter:
             score = sum(1 for term in terms if term in normalized)
             if explicit_provider_search and intent == "search":
                 score += 3
+            if named_plugin_request and intent == "search":
+                score += 4
             if generic_function_search and intent == "search":
                 score += 3
             if explicit_smart_patch and intent == "patch":
