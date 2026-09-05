@@ -28,6 +28,7 @@ class Route:
     external: tuple[ExternalCapability, ...]
 
 
+<<<<<<< HEAD
 # Discovery terms that should prioritize search/analysis over mutation
 DISCOVERY_TERMS = ("find", "search", "locate", "identify", "discover", "analyze", "audit", "review", "investigate", "scan", "detect")
 
@@ -89,6 +90,26 @@ def _mutation_tools(text: str) -> tuple[str, ...]:
     return tuple(tools) or ("apply_patch",)
 
 
+=======
+# The first tool is always a compact snapshot; the rest are intent-specific.
+INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("patch", ("patch", "fix", "nop", "modify", "instrument"), ("get_function_context", "apply_patch")),
+    ("explain", ("explain", "understand", "what does", "walk through"), ("get_function_context", "get_xrefs")),
+    ("rename", ("rename", "name this", "better name", "symbol name"), ("get_function_context", "rename_function")),
+    ("types", ("type", "signature", "prototype", "parameter", "return type", "struct"), ("get_function_context", "get_type_evidence", "apply_function_type")),
+    ("xrefs", ("xref", "cross reference", "caller", "callee", "call graph"), ("get_function_context", "get_xrefs")),
+    ("annotate", ("annotate", "comment", "document", "tag"), ("get_function_context", "annotate_function")),
+    ("vulnerabilities", ("vulnerability", "vulnerable", "exploit", "overflow", "use after", "uaf", "taint", "security"), ("get_function_context", "get_xrefs", "review_vulnerabilities")),
+    ("triage", ("semantic", "meaning", "stripped", "likely", "triage", "bnql", "query", "search functions"), ("semantic_search", "query_binary", "get_verification")),
+    ("verify", ("verify", "evidence", "proven", "prove", "source", "grounded"), ("get_function_context", "get_xrefs", "get_verification")),
+    ("map", ("code map", "map", "relationship", "execution path", "call graph"), ("get_function_context", "code_map")),
+    ("notebook", ("notebook", "finding", "record this", "remember", "handoff"), ("get_verification", "notebook_context", "notebook_record")),
+    ("investigate", ("investigate", "audit", "review", "find all", "multiple functions"), ("find_functions", "fanout_investigate")),
+    ("plugins", ("plugin", "extension", "capability", "command"), ("get_function_context", "search_capabilities", "invoke_external_command")),
+)
+
+
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 class CapabilityRouter:
     """Routes by local keyword scoring rather than a separate LLM call."""
 
@@ -97,6 +118,7 @@ class CapabilityRouter:
 
     def route(self, request: str, capabilities: Sequence[ExternalCapability]) -> Route:
         normalized = re.sub(r"\s+", " ", request.lower()).strip()
+<<<<<<< HEAD
         
         # Detect compound intent: discovery + mutation
         has_discovery = _has_discovery_intent(normalized)
@@ -132,6 +154,15 @@ class CapabilityRouter:
                 # discovery intent won the keyword score.
                 selected = tuple(dict.fromkeys(selected + _mutation_tools(normalized)))
         
+=======
+        best_intent = "general"
+        selected = ("get_function_context", "search_capabilities")
+        best_score = 0
+        for intent, terms, tools in INTENTS:
+            score = sum(1 for term in terms if term in normalized)
+            if score > best_score:
+                best_intent, selected, best_score = intent, tools, score
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         external = self._rank_external(normalized, capabilities)
         if external and "invoke_external_command" not in selected:
             selected = (*selected, "invoke_external_command")

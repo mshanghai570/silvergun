@@ -157,6 +157,7 @@ class NativeToolsTests(unittest.TestCase):
         result = LeanAgent(Client(), Settings()).run("Explain this function", self.tools)
         self.assertEqual(result.answer, "Recovered after malformed tool call.")
 
+<<<<<<< HEAD
     def test_find_functions_requires_a_real_query(self):
         empty = json.loads(self.tools.execute("find_functions", {"query": ""}))
         self.assertEqual(empty["matches"], [])
@@ -189,6 +190,8 @@ class NativeToolsTests(unittest.TestCase):
         self.assertEqual(result.answer, "Finished.")
         self.assertTrue(any("guardrail" in message["content"].lower() for message in client.tool_messages))
 
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
     def test_patch_never_writes_when_approval_is_declined(self):
         result = self.tools.execute("apply_patch", {"address": "0x401000", "bytes_hex": "90 90", "reason": "test"})
         self.assertEqual(result, "User declined the patch.")

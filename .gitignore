@@ -7,4 +7,7 @@ __pycache__/
 .DS_Store
 .vscode/
 .idea/
+<<<<<<< HEAD
 .codebuddy
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37

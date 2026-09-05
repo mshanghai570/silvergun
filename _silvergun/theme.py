@@ -95,6 +95,7 @@ QLabel[role='capability'] {{
 }}
 QLabel[role='capability'][active='true'] {{ color: {INK}; background-color: {RED_DEEP}; border-left: 2px solid {RED_BRIGHT}; }}
 QLabel[role='capability'][available='false'] {{ color: {METAL_DIM}; }}
+<<<<<<< HEAD
 QLabel[role='section_header'] {{
     background-color: {PANEL};
     border-bottom: 1px solid {BORDER};
@@ -104,6 +105,8 @@ QLabel[role='section_header'] {{
     font-size: 10px;
     font-weight: bold;
 }}
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 """
 
 

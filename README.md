@@ -9,7 +9,11 @@
 | Supported host | Binary Ninja 5.1+ with Python 3 support |
 | Provider protocol | OpenAI-compatible `/models` and `/chat/completions` |
 | Dependencies | None; Python standard library and Binary Ninja APIs only |
+<<<<<<< HEAD
 | Agent limit | Five tool rounds by default, configurable from one to eight |
+=======
+| Agent limit | Three tool rounds by default, configurable from one to eight |
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 | Remote concurrency | Bounded read-only function reviews over frozen snapshots |
 | Mutations | Always display an explicit approval prompt before patch, rename, type, annotation, or external command execution |
 

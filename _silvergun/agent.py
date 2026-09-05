@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import json
 from typing import Any
 
+<<<<<<< HEAD
 from .adapters import AdapterRegistry
 from .client import OpenAICompatibleClient, ProviderError
 from .router import CapabilityRouter, Route
@@ -16,6 +17,11 @@ from .events import (
     emit_tool_result, emit_tool_failed, emit_investigation_complete,
     emit_final_synthesis, get_event_emitter, reset_event_emitter, EventFormatter, InvestigationEvent
 )
+=======
+from .client import OpenAICompatibleClient, ProviderError
+from .router import CapabilityRouter, Route
+from .tools import NativeTools
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 
 SYSTEM_PROMPT = """You are Silvergun, a concise Binary Ninja reverse-engineering partner.
@@ -27,6 +33,7 @@ binary_view_attached is true. Omit the address when asking for the current funct
 uncertainty. Use semantic_search or query_binary for stripped-binary triage, get_verification for trust
 checks, code_map for relationships, and notebook tools for durable findings. Never claim that a mutation
 occurred unless a tool reports it. Do not reveal hidden reasoning; return only a short, useful analyst
+<<<<<<< HEAD
 answer with concrete next actions when appropriate. Treat the user's request as a goal to
 complete, not a question to summarize: decompose it into evidence-gathering steps, and when
 the goal includes a mutation (patch, rename, type, annotation) propose it with the matching
@@ -35,6 +42,9 @@ about specific text content (strings, URLs, passwords, secrets) prefer bn_search
 it is about symbols or function names prefer bn_search_symbols or bn_find_functions; then use
 get_xrefs to see who uses the matches. Do not repeat a tool call that returned the same data;
 move to the next step or answer."""
+=======
+answer with concrete next actions when appropriate."""
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
 ROUTE_GUIDANCE = {
     "triage": "Triage locally first; return a ranked shortlist with the exact matching evidence for each function.",
@@ -43,12 +53,15 @@ ROUTE_GUIDANCE = {
     "notebook": "Use the notebook as durable context and record only concise findings with evidence and confidence.",
     "vulnerabilities": "Treat detector hits as leads only; report the matched operation, reachability question, and missing proof.",
     "investigate": "Decompose the objective into bounded, evidence-producing sub-investigations and synthesize only after tool results.",
+<<<<<<< HEAD
     "boolean": "Use BoolHunter to find boolean functions matching the request. Analyze candidates for evidence-based scoring.",
     "category": "Use BoolHunter to find functions by semantic category. Return categorized results with confidence scores.",
     "batch_scan": "Use BoolHunter batch_scan to analyze multiple functions efficiently.",
     "strings": "Use bn_search_strings to locate string evidence, then find_functions or get_xrefs to see who references the matches.",
     "symbols": "Use bn_search_symbols or bn_find_functions to locate name-based evidence, then get_xrefs for call context.",
     "continue": "Restore the case file with notebook_context first, then re-verify the recorded leads with fresh evidence before acting on them.",
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 }
 
 
@@ -62,6 +75,7 @@ class AgentResult:
 class LeanAgent:
     """A small agent loop with a hard tool-round budget and no planning model call."""
 
+<<<<<<< HEAD
     def __init__(self, client: OpenAICompatibleClient, settings, adapter_registry: AdapterRegistry | None = None, on_event=None) -> None:
         self.client = client
         self.settings = settings
@@ -165,19 +179,73 @@ class LeanAgent:
     def _emit(self, message: str, narration: str | None = None) -> None:
         if self.on_event is not None:
             self.on_event(message, narration)
+=======
+    def __init__(self, client: OpenAICompatibleClient, settings, on_event=None) -> None:
+        self.client = client
+        self.settings = settings
+        self.router = CapabilityRouter()
+        self.on_event = on_event
+
+    def run(self, request: str, native: NativeTools) -> AgentResult:
+        route = self.router.route(request, native.capabilities)
+        self._emit(f"ROUTE / {route.intent.upper()} / {len(route.tools)} NATIVE TOOLS SELECTED")
+        tools = native.definitions(route.tools)
+        messages: list[dict[str, Any]] = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": self._request_message(request, route, native.context_hint(), native.notebook_context())},
+        ]
+        executed: set[str] = set()
+        for round_number in range(1, self.settings.max_steps + 1):
+            completion = self.client.chat(self.settings.model, messages, tools)
+            if not completion.tool_calls:
+                answer = completion.content.strip() or "The model returned no answer."
+                self._emit(f"MODEL / FINAL RESPONSE / ROUND {round_number}")
+                return AgentResult(answer, route.intent, round_number)
+            calls = [_normalized_tool_call(call, round_number, index) for index, call in enumerate(completion.tool_calls, start=1)]
+            messages.append({"role": "assistant", "content": completion.content or "", "tool_calls": calls})
+            for call in calls[:6]:
+                call_id = str(call["id"])
+                try:
+                    name, arguments = _tool_call(call)
+                    signature = f"{name}:{json.dumps(arguments, sort_keys=True, separators=(',', ':'))}"
+                    if signature in executed:
+                        result = "Skipped duplicate tool call. Use the previous result."
+                    else:
+                        executed.add(signature)
+                        result = self._execute(name, arguments, native)
+                    self._emit(f"TOOL / {name.upper()}\n{result[:900]}")
+                except (TypeError, ValueError, json.JSONDecodeError) as error:
+                    # A single malformed provider tool call must not abort the
+                    # entire user request. Return a concise correction so the
+                    # model can continue with a valid call or a direct answer.
+                    result = f"Tool request rejected: {error}. Continue with a valid tool call or answer directly."
+                messages.append({"role": "tool", "tool_call_id": call_id, "content": result})
+        final = self.client.chat(self.settings.model, messages, ())
+        answer = final.content.strip() or "Tool budget reached. Review the collected tool results."
+        self._emit("MODEL / TOOL BUDGET REACHED / FINALIZING")
+        return AgentResult(answer, route.intent, self.settings.max_steps)
+
+    def _emit(self, message: str) -> None:
+        if self.on_event is not None:
+            self.on_event(message)
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 
     def _execute(self, name: str, arguments: dict[str, Any], native: NativeTools) -> str:
         try:
             if name == "fanout_investigate":
                 return self._fanout(arguments, native)
+<<<<<<< HEAD
             if self._is_adapter_tool(name):
                 return self._execute_adapter_tool(name, arguments)
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
             return native.execute(name, arguments)
         except (ProviderError, KeyError, ValueError, TypeError) as error:
             return f"Tool error: {error}"
         except Exception as error:
             return f"Unexpected tool error: {error}"
 
+<<<<<<< HEAD
     def _is_adapter_tool(self, name: str) -> bool:
         if not self.adapter_registry:
             return False
@@ -188,11 +256,16 @@ class LeanAgent:
             return json.dumps({"error": "Adapter registry not available"})
         return self.adapter_registry.execute(name, arguments)
 
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
     def _fanout(self, arguments: dict[str, Any], native: NativeTools) -> str:
         raw_addresses = arguments.get("addresses", [])
         if not isinstance(raw_addresses, list):
             return "addresses must be a list."
+<<<<<<< HEAD
         emit_tool_started("fanout_investigate", f"Preparing parallel reviews for up to {len(raw_addresses)} function(s)")
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
         focus = str(arguments.get("focus", "Review this function."))[:800]
         snapshots = native.snapshots([str(address) for address in raw_addresses])
         if not snapshots:
@@ -245,6 +318,10 @@ def _tool_call(call: dict[str, Any]) -> tuple[str, dict[str, Any]]:
 
 
 def _normalized_tool_call(call: dict[str, Any], round_number: int, index: int) -> dict[str, Any]:
+<<<<<<< HEAD
+=======
+    """Give incomplete compatible-provider calls a transcript-safe identifier."""
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
     normalized = dict(call)
     normalized["id"] = str(call.get("id") or f"call_{round_number}_{index}")
     return normalized

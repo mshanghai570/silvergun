@@ -9,7 +9,10 @@ from binaryninja.interaction import get_text_line_input, show_markdown_report
 from binaryninja.mainthread import execute_on_main_thread
 from binaryninja.plugin import BackgroundTaskThread
 
+<<<<<<< HEAD
 from .adapters import AdapterRegistry
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
 from .agent import LeanAgent
 from .client import OpenAICompatibleClient, ProviderError
 from .config import api_key, config
@@ -71,6 +74,7 @@ def map_current(bv, function) -> None:
 def inspect_capabilities(bv) -> None:
     index = ExternalCommandIndex()
     capabilities = index.refresh(bv, None, force=True)
+<<<<<<< HEAD
     registry = AdapterRegistry.get()
     registry.discover(bv)
     adapter_info = registry.available_plugins()
@@ -85,6 +89,10 @@ def inspect_capabilities(bv) -> None:
         f"### External Commands\n| ID | Command | Description |\n| --- | --- | --- |\n"
         + (rows or "| — | No compatible plugin commands are valid in this context. | — |")
     )
+=======
+    rows = "\n".join(f"| `{item.identifier}` | {item.name} | {item.description or '—'} |" for item in capabilities)
+    report = "# Silvergun Capabilities\n\n| ID | Command | Description |\n| --- | --- | --- |\n" + (rows or "| — | No compatible plugin commands are valid in this context. | — |")
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
     execute_on_main_thread(lambda: show_markdown_report(bv, "Silvergun Capabilities", report, report))
 
 
@@ -92,6 +100,7 @@ def _start(bv, function, request: str) -> None:
     start_request(bv, request, function)
 
 
+<<<<<<< HEAD
 def start_request(bv, request: str, function=None, on_complete: Callable[[str], None] | None = None, on_progress: Callable[..., None] | None = None) -> None:
     """Run an investigation on a background task.
 
@@ -99,6 +108,9 @@ def start_request(bv, request: str, function=None, on_complete: Callable[[str], 
     detailed event record for the activity stream; narration is the plain-
     English sentence intended for the results panel.
     """
+=======
+def start_request(bv, request: str, function=None, on_complete: Callable[[str], None] | None = None, on_progress: Callable[[str], None] | None = None) -> None:
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
     AgentTask(bv, function, request, on_complete, on_progress).start()
 
 
@@ -116,15 +128,22 @@ class AgentTask(BackgroundTaskThread):
     def run(self) -> None:
         try:
             settings = config()
+<<<<<<< HEAD
             self.progress = "Silvergun: discovering plugin capabilities"
             adapter_registry = AdapterRegistry.get()
             adapter_registry.discover(self._bv)
+=======
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
             self.progress = "Silvergun: contacting provider"
             client = OpenAICompatibleClient(settings, api_key(settings.normalized_base_url))
             native = NativeTools(self._bv, self._function, ExternalCommandIndex(), settings.max_context_chars)
             native.mark_progress("analysis", 0, settings.max_steps, self._request[:240])
             self.progress = "Silvergun: routing and analyzing"
+<<<<<<< HEAD
             result = LeanAgent(client, settings, adapter_registry, on_event=self._event).run(self._request, native)
+=======
+            result = LeanAgent(client, settings, on_event=self._event).run(self._request, native)
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
             native.mark_progress("complete", result.rounds, settings.max_steps, f"Completed {result.intent} investigation.")
             self._report("Silvergun", f"# Silvergun\n\n**Intent:** `{result.intent}`  \n**Tool rounds:** `{result.rounds}`\n\n{result.answer}")
         except ProviderError as error:
@@ -142,6 +161,12 @@ class AgentTask(BackgroundTaskThread):
             show_markdown_report(self._bv, title, markdown, markdown)
         execute_on_main_thread(deliver)
 
+<<<<<<< HEAD
     def _event(self, technical: str, narration: str | None = None) -> None:
         if self._on_progress is not None:
             execute_on_main_thread(lambda: self._on_progress(technical, narration))
+=======
+    def _event(self, message: str) -> None:
+        if self._on_progress is not None:
+            execute_on_main_thread(lambda: self._on_progress(message))
+>>>>>>> 1630c0d351f49b041623dfd9440b74c011846a37
