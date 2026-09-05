@@ -45,8 +45,9 @@ def _has_mutation_intent(text: str) -> bool:
 
 # The first tool is always a compact snapshot; the rest are intent-specific.
 INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
+    ("search", ("search", "locate", "identify", "discover", "look for", "functions for", "functions related", "plugin type", "find a plugin", "plugin that", "plugin which", "all plugins", "any plugin", "using a plugin"), ("get_function_context", "find_functions", "semantic_search", "query_binary", "get_xrefs", "search_capabilities", "invoke_external_command", "bn_search_strings", "bn_search_symbols", "bn_find_functions", "bn_find_cross_references", "boolhunter_quick_scan", "boolhunter_find_category", "boolhunter_analyze")),
     # Discovery intents (higher priority when discovery terms present)
-    ("triage", ("semantic", "meaning", "stripped", "likely", "triage", "bnql", "query", "search functions"), ("semantic_search", "query_binary", "get_verification")),
+    ("triage", ("semantic", "meaning", "stripped", "likely", "triage", "bnql", "query"), ("semantic_search", "query_binary", "get_verification")),
     ("continue", ("continue", "resume", "unresolved", "case file", "next evidence", "pick up", "where was i"), ("notebook_context", "notebook_search", "get_function_context", "get_xrefs", "semantic_search")),
     ("investigate", ("investigate", "audit", "review", "find all", "multiple functions", "analyze", "scan", "detect"), ("find_functions", "fanout_investigate", "boolhunter_quick_scan", "boolhunter_find_category")),
     ("category", ("category", "find functions related to", "find all", "purchase", "auth", "login", "logout", "network", "payment", "security", "validation", "storage", "premium", "unlock", "entitlement", "subscription", "license", "in-app", "iap"), ("boolhunter_find_category", "boolhunter_quick_scan", "get_function_context")),
@@ -101,6 +102,8 @@ class CapabilityRouter:
         # Detect compound intent: discovery + mutation
         has_discovery = _has_discovery_intent(normalized)
         has_mutation = _has_mutation_intent(normalized)
+        explicit_provider_search = any(term in normalized for term in ("all plugins", "any plugin", "find a plugin", "plugin that", "plugin which", "plugin type"))
+        generic_function_search = normalized in ("search functions", "search for functions", "locate functions")
         
         best_intent = "general"
         selected = ("get_function_context", "search_capabilities")
@@ -108,6 +111,10 @@ class CapabilityRouter:
         
         for intent, terms, tools in INTENTS:
             score = sum(1 for term in terms if term in normalized)
+            if explicit_provider_search and intent == "search":
+                score += 3
+            if generic_function_search and intent == "search":
+                score += 3
             
             # Boost discovery intents when discovery terms are present
             if has_discovery and intent in ("triage", "continue", "investigate", "category", "boolean", "vulnerabilities", "map", "strings", "symbols"):

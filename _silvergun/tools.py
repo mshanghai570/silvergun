@@ -395,8 +395,10 @@ class NativeTools:
 
     def _search_capabilities(self, args: dict[str, Any]) -> str:
         query = str(args.get("query", "")).lower().strip()
+        if not query:
+            return capability_digest(self.capabilities[:24], limit=4000) or "No compatible installed plugin commands are available in the current context."
         matches = [capability for capability in self.capabilities if query in f"{capability.name} {capability.description}".lower()]
-        return capability_digest(matches[:12], limit=2200) or "No compatible installed plugin commands matched."
+        return capability_digest(matches[:24], limit=4000) or f"No compatible installed plugin commands matched '{query}'. Try a broader capability term."
 
     @_main_thread
     def _invoke_external(self, args: dict[str, Any]) -> str:

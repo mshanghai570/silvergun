@@ -167,6 +167,19 @@ class RouterTests(unittest.TestCase):
         self.assertIn("notebook_context", route.tools)
         self.assertIn("get_function_context", route.tools)
 
+    def test_broad_function_search_exposes_all_search_providers(self):
+        route = CapabilityRouter().route("Search all plugins and Binary Ninja for functions related to authentication", [])
+        self.assertEqual(route.intent, "search")
+        for tool in ("search_capabilities", "invoke_external_command", "semantic_search", "query_binary", "bn_find_functions", "bn_search_symbols", "boolhunter_quick_scan"):
+            self.assertIn(tool, route.tools)
+
+    def test_plugin_type_search_does_not_require_boolhunter(self):
+        route = CapabilityRouter().route("Find a plugin that can search for network functions", [])
+        self.assertEqual(route.intent, "search")
+        self.assertEqual(route.tools[0], "get_function_context")
+        self.assertIn("search_capabilities", route.tools)
+        self.assertIn("invoke_external_command", route.tools)
+
 
 if __name__ == "__main__":
     unittest.main()
