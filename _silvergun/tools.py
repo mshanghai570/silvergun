@@ -22,6 +22,7 @@ from .events import emit_tool_started, emit_tool_progress, emit_tool_result, emi
 
 
 MAX_ITEMS = 64
+MAX_TRIAGE_FUNCTIONS = 10000
 MAX_IL_LINES = 180
 
 
@@ -288,7 +289,7 @@ class NativeTools:
         
         emit_tool_result("semantic_search", f"Found {len(matches)} matches for query: {query[:30]}...", {"count": len(matches)})
         
-        return json.dumps({"query": query, "matches": matches, "method": "bounded lexical semantic triage; verify each result"}, separators=(",", ":"))
+        return json.dumps({"query": query, "matches": matches, "method": "bounded lexical semantic triage; verify each result", "indexed_functions": total_functions, "total_functions": getattr(self, "_triage_total", total_functions), "truncated": bool(getattr(self, "_triage_truncated", False))}, separators=(",", ":"))
 
     def _query_binary(self, args: dict[str, Any]) -> str:
         query = str(args.get("query", "")).strip()
@@ -310,7 +311,8 @@ class NativeTools:
                     matches.append(self._result_row(function, f"{operator}:{value}"))
                     if len(matches) >= 32:
                         break
-        return json.dumps({"query": query, "matches": matches, "syntax": "name~:text | calls:text | has:text | addr:0xADDRESS"}, separators=(",", ":"))
+        indexed = self._triage_records()
+        return json.dumps({"query": query, "matches": matches, "syntax": "name~:text | calls:text | has:text | addr:0xADDRESS", "indexed_functions": len(indexed), "total_functions": getattr(self, "_triage_total", len(indexed)), "truncated": bool(getattr(self, "_triage_truncated", False))}, separators=(",", ":"))
 
     def _verification(self, args: dict[str, Any]) -> str:
         func = self._resolve(args)
@@ -384,7 +386,10 @@ class NativeTools:
         """Build one bounded in-memory index per agent task, avoiding repeated HLIL walks."""
         if self._triage_index is None:
             self._triage_index = []
-            for function in list(getattr(self.bv, "functions", []))[:2000]:
+            all_functions = list(getattr(self.bv, "functions", []))
+            self._triage_total = len(all_functions)
+            self._triage_truncated = len(all_functions) > MAX_TRIAGE_FUNCTIONS
+            for function in all_functions[:MAX_TRIAGE_FUNCTIONS]:
                 name = str(getattr(function, "name", "")).lower()
                 haystack = f"{name} {getattr(function, 'type', '')} {self._il_text(function)}".lower()
                 self._triage_index.append((function, name, haystack))

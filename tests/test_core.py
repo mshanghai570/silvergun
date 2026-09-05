@@ -128,6 +128,7 @@ class ClientTests(unittest.TestCase):
         self.assertEqual(calls[0]["function"]["name"], "bn_search_symbols")
 
 
+
 class RouterTests(unittest.TestCase):
     def setUp(self):
         self.capabilities = [
@@ -234,6 +235,11 @@ class RouterTests(unittest.TestCase):
         route = CapabilityRouter().route("Analyze this function's callers and callees", [])
         self.assertEqual(route.intent, "xrefs")
         self.assertIn("get_xrefs", route.tools)
+
+    def test_router_does_not_treat_substrings_as_intents(self):
+        self.assertEqual(CapabilityRouter().route("Explain the anatomy of this function", []).intent, "explain")
+        self.assertNotEqual(CapabilityRouter().route("A mapless string literal", []).intent, "map")
+        self.assertEqual(CapabilityRouter().route("Please rename this function", []).intent, "rename")
 
 
 if __name__ == "__main__":

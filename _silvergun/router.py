@@ -36,13 +36,17 @@ DISCOVERY_TERMS = ("find", "search", "locate", "identify", "discover", "analyze"
 # Mutation terms that indicate the user wants to modify
 MUTATION_TERMS = ("patch", "fix", "nop", "modify", "instrument", "rename", "apply", "change", "bypass")
 
+def _has_term(text: str, term: str) -> bool:
+    term = term.strip().lower()
+    return bool(term) and re.search(r"(?<![a-z0-9_])" + re.escape(term) + r"(?![a-z0-9_])", text) is not None
+
 
 def _has_discovery_intent(text: str) -> bool:
-    return any(term in text for term in DISCOVERY_TERMS)
+    return any(_has_term(text, term) for term in DISCOVERY_TERMS)
 
 
 def _has_mutation_intent(text: str) -> bool:
-    return any(term in text for term in MUTATION_TERMS)
+    return any(_has_term(text, term) for term in MUTATION_TERMS)
 
 
 # The first tool is always a compact snapshot; the rest are intent-specific.
@@ -62,7 +66,7 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("explain", ("explain", "understand", "what does", "walk through"), ("get_function_context", "get_xrefs")),
     ("annotate", ("annotate", "comment", "document", "tag"), ("get_function_context", "annotate_function")),
     ("types", ("type", "signature", "prototype", "parameter", "return type", "struct"), ("get_function_context", "get_type_evidence", "apply_function_type")),
-    ("xrefs", ("xref", "cross reference", "caller", "callee", "call graph"), ("get_function_context", "get_xrefs")),
+    ("xrefs", ("xref", "cross reference", "caller", "callers", "callee", "callees", "call graph"), ("get_function_context", "get_xrefs")),
     # Mutation intents (lower priority when discovery terms also present)
     ("patch", ("patch", "fix", "nop", "modify", "instrument"), ("get_function_context", "apply_patch")),
     ("rename", ("rename", "name this", "better name", "symbol name"), ("get_function_context", "rename_function")),
@@ -87,7 +91,7 @@ def _mutation_tools(text: str) -> tuple[str, ...]:
     """Map mutation verbs in the request to concrete approval-gated tools."""
     tools: list[str] = []
     for verbs, mapped in _MUTATION_VERB_TOOLS:
-        if any(verb in text for verb in verbs):
+        if any(_has_term(text, verb) for verb in verbs):
             tools.extend(mapped)
     return tuple(tools) or ("apply_patch",)
 
@@ -104,18 +108,18 @@ class CapabilityRouter:
         # Detect compound intent: discovery + mutation
         has_discovery = _has_discovery_intent(normalized)
         has_mutation = _has_mutation_intent(normalized)
-        explicit_provider_search = any(term in normalized for term in ("all plugins", "any plugin", "find a plugin", "plugin that", "plugin which", "plugin type"))
+        explicit_provider_search = any(_has_term(normalized, term) for term in ("all plugins", "any plugin", "find a plugin", "plugin that", "plugin which", "plugin type"))
         generic_function_search = normalized in ("search functions", "search for functions", "locate functions")
         named_plugin_request = bool(re.search(r"(?:use|using|with)\s+(?!(?:a|the)\s+)[a-z0-9][a-z0-9 _-]{2,}\s+plugin", normalized))
-        explicit_smart_patch = any(term in normalized for term in ("smart patch", "precise patch", "patch this function"))
-        explicit_xrefs = any(term in normalized for term in ("callers and callees", "caller and callee", "cross reference", "cross-reference"))
+        explicit_smart_patch = any(_has_term(normalized, term) for term in ("smart patch", "precise patch", "patch this function"))
+        explicit_xrefs = any(_has_term(normalized, term) for term in ("callers and callees", "caller and callee", "cross reference", "cross-reference"))
         
         best_intent = "general"
         selected = ("get_function_context", "search_capabilities")
         best_score = 0
         
         for intent, terms, tools in INTENTS:
-            score = sum(1 for term in terms if term in normalized)
+            score = sum(1 for term in terms if _has_term(normalized, term))
             if explicit_provider_search and intent == "search":
                 score += 3
             if named_plugin_request and intent == "search":
@@ -125,7 +129,7 @@ class CapabilityRouter:
             if explicit_smart_patch and intent == "patch":
                 score += 3
             if explicit_xrefs and intent == "xrefs":
-                score += 3
+                score += 5
             
             # Boost discovery intents when discovery terms are present
             if has_discovery and intent in ("triage", "continue", "investigate", "category", "boolean", "vulnerabilities", "map", "strings", "symbols"):

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import time
+import threading
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -121,31 +123,37 @@ class EventEmitter:
         self._listeners: list[Callable[[InvestigationEvent], None]] = []
         self._sequence: int = 0
         self._start_time: float = time.time()
+        self._lock = threading.RLock()
     
     def add_listener(self, listener: Callable[[InvestigationEvent], None]) -> None:
         """Add a listener for investigation events."""
-        if listener not in self._listeners:
-            self._listeners.append(listener)
+        with self._lock:
+            if listener not in self._listeners:
+                self._listeners.append(listener)
     
     def remove_listener(self, listener: Callable[[InvestigationEvent], None]) -> None:
         """Remove a listener."""
-        if listener in self._listeners:
-            self._listeners.remove(listener)
+        with self._lock:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
     
     def clear_listeners(self) -> None:
         """Remove all listeners."""
-        self._listeners.clear()
+        with self._lock:
+            self._listeners.clear()
     
     def emit(self, event: InvestigationEvent) -> None:
         """Emit an event to all listeners."""
-        self._sequence += 1
-        event.sequence = self._sequence
+        with self._lock:
+            self._sequence += 1
+            event.sequence = self._sequence
+            listeners = list(self._listeners)
         
         # Calculate elapsed time and add to event data
         elapsed = time.time() - self._start_time
         event.data["elapsed_seconds"] = round(elapsed, 3)
         
-        for listener in self._listeners[:]:  # Copy list to avoid modification during iteration
+        for listener in listeners:
             try:
                 listener(event)
             except Exception as e:
@@ -154,8 +162,9 @@ class EventEmitter:
     
     def reset(self) -> None:
         """Reset the emitter for a new investigation."""
-        self._sequence = 0
-        self._start_time = time.time()
+        with self._lock:
+            self._sequence = 0
+            self._start_time = time.time()
 
 
 class EventFormatter:
@@ -492,24 +501,24 @@ class EventFormatter:
         return "the current function"
 
 
-# Global event emitter instance for the current investigation
-_current_emitter: EventEmitter | None = None
+# Context-local emitter: concurrent investigations cannot reset or receive one
+# another's listeners. A fallback is intentionally avoided; every run creates
+# its own emitter through reset_event_emitter().
+_emitter_context: ContextVar[EventEmitter | None] = ContextVar("silvergun_event_emitter", default=None)
 
 
 def get_event_emitter() -> EventEmitter:
     """Get or create the global event emitter for the current investigation."""
-    global _current_emitter
-    if _current_emitter is None:
-        _current_emitter = EventEmitter()
-    return _current_emitter
+    emitter = _emitter_context.get()
+    if emitter is None:
+        emitter = EventEmitter()
+        _emitter_context.set(emitter)
+    return emitter
 
 
 def reset_event_emitter() -> None:
     """Reset the global event emitter."""
-    global _current_emitter
-    if _current_emitter is not None:
-        _current_emitter.reset()
-    _current_emitter = None
+    _emitter_context.set(EventEmitter())
 
 
 # Convenience functions for emitting common event types

@@ -15,14 +15,14 @@ from .events import emit_tool_started, emit_tool_result, emit_tool_completed, em
 class ExternalCommandIndex:
     """Indexes valid commands in the current context without loading a large plugin framework."""
 
-    _cache: "OrderedDict[tuple[int, int | None], tuple[dict[str, Any], tuple[ExternalCapability, ...]]]" = OrderedDict()
+    _cache: "OrderedDict[tuple[int, tuple[Any, ...]], tuple[dict[str, Any], tuple[ExternalCapability, ...]]]" = OrderedDict()
     _cache_limit = 48
 
     def __init__(self) -> None:
         self._commands: dict[str, Any] = {}
 
     def refresh(self, bv, function=None, *, force: bool = False) -> list[ExternalCapability]:
-        key = (id(bv), getattr(function, "start", None))
+        key = (id(bv), self._context_fingerprint(bv, function))
         if not force and key in self._cache:
             commands, capabilities = self._cache[key]
             self._commands = commands.copy()
@@ -70,6 +70,26 @@ class ExternalCommandIndex:
         except Exception as e:
             emit_tool_failed("external_command", f"Plugin command failed: {command_name}", str(e))
             raise
+
+    @staticmethod
+    def _context_fingerprint(bv, function=None) -> tuple[Any, ...]:
+        """Capture context fields known to affect PluginCommand validity.
+
+        Binary Ninja does not expose a universal validity revision for plugin
+        commands, so cache reuse is conservative: selected function/address,
+        selection, current function, and view type all participate. Callers
+        can still force discovery when a plugin changes external state.
+        """
+        current = getattr(bv, "current_function", None)
+        selection = getattr(bv, "selection", None)
+        return (
+            getattr(function, "start", None),
+            getattr(current, "start", None),
+            getattr(bv, "current_address", None),
+            getattr(selection, "start", None),
+            getattr(selection, "end", None),
+            str(getattr(bv, "view_type", "")),
+        )
 
     @staticmethod
     def _identifier(name: str) -> str:

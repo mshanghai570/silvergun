@@ -77,7 +77,10 @@ class AnalysisNotebook:
 
     def __init__(self, filename: str) -> None:
         self.filename = filename or "untitled-binary"
-        identity = str(Path(self.filename).expanduser())
+        raw_path = Path(self.filename).expanduser()
+        # resolve(strict=False) normalizes relative components and resolves
+        # existing symlinks without requiring an unsaved/temporary binary to exist.
+        identity = str(raw_path.resolve(strict=False)) if self.filename != "untitled-binary" else self.filename
         digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:20]
         self.path = Path.home() / ".binaryninja" / "silvergun" / "notebooks" / f"{digest}.json"
 

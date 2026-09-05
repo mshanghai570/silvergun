@@ -59,6 +59,7 @@ class Evidence:
     confidence: str
     summary: str
     provenance: str
+    source_kind: str = "host_observation"
     address: str = ""
     function_name: str = ""
     related_entities: tuple[str, ...] = ()
@@ -208,6 +209,7 @@ def normalize_result(capability: CapabilitySpec, binary_view_id: str, raw: Any, 
     for index, row in enumerate(rows[:128]):
         item = row if isinstance(row, Mapping) else {"value": row}
         address = str(item.get("address", ""))
+        source_kind = "model_interpretation" if any(key in item for key in ("interpretation", "inferred", "hypothesis")) else "host_observation"
         evidence.append(Evidence(
             evidence_id=f"{capability.capability_id}:{sequence}:{index}",
             capability_id=capability.capability_id,
@@ -216,6 +218,7 @@ def normalize_result(capability: CapabilitySpec, binary_view_id: str, raw: Any, 
             confidence=str(item.get("confidence", item.get("score", "unknown"))),
             summary=str(item.get("summary", item.get("name", item.get("value", "match"))))[:500],
             provenance=capability.name,
+            source_kind=source_kind,
             address=address,
             function_name=str(item.get("name", item.get("function", ""))),
             related_entities=tuple(str(v) for v in item.get("related_functions", []) if v),

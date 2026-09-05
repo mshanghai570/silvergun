@@ -28,7 +28,7 @@ class AdapterRegistry:
         self._tools: dict[str, tuple[str, dict[str, Any]]] = {}
         self._capabilities: list[ExternalCapability] = []
         self._discovered = False
-        self._context_key: int | None = None
+        self._context_key: tuple[int | None, int | None] | None = None
 
     @classmethod
     def get(cls) -> "AdapterRegistry":
@@ -40,8 +40,8 @@ class AdapterRegistry:
     def reset(cls) -> None:
         cls._instance = None
 
-    def discover(self, bv) -> None:
-        context_key = id(bv) if bv is not None else None
+    def discover(self, bv, function=None) -> None:
+        context_key = ((id(bv) if bv is not None else None), getattr(function, "start", None))
         if self._discovered and self._context_key == context_key:
             return
         # A SidebarWidget and background task can survive a view switch. Never
@@ -53,7 +53,7 @@ class AdapterRegistry:
         self._context_key = context_key
 
         self._discover_boolhunter(bv)
-        self._discover_binaryninja_builtins(bv)
+        self._discover_binaryninja_builtins(bv, function)
         self._build_tool_index()
 
     def _discover_boolhunter(self, bv) -> None:
@@ -68,11 +68,11 @@ class AdapterRegistry:
         except Exception as e:
             logger.warning(f"BoolHunter adapter failed to load: {e}")
 
-    def _discover_binaryninja_builtins(self, bv) -> None:
+    def _discover_binaryninja_builtins(self, bv, function=None) -> None:
         """Discover and adapt Binary Ninja's built-in analysis capabilities."""
         try:
             from .binaryninja_builtins import BinaryNinjaBuiltinsAdapter
-            adapter = BinaryNinjaBuiltinsAdapter.create(bv)
+            adapter = BinaryNinjaBuiltinsAdapter.create(bv, function)
             if adapter.is_available:
                 self._adapters["binaryninja"] = adapter
                 logger.info("Binary Ninja builtins adapter loaded successfully")

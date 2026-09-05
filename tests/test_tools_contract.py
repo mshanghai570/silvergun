@@ -223,6 +223,16 @@ class NativeToolsTests(unittest.TestCase):
         name, _ = _tool_call({"function": {"name": "notebook_add", "arguments": "{}"}})
         self.assertEqual(name, "notebook_record")
 
+    def test_provider_tool_call_normalizer_rejects_malformed_fields(self):
+        for call in ({}, {"function": {}}, {"function": {"name": "x", "arguments": None}}, {"function": {"name": "x", "arguments": "[]"}}):
+            with self.assertRaises((TypeError, ValueError, json.JSONDecodeError)):
+                _tool_call(call)
+
+    def test_provider_tool_call_normalizer_accepts_dict_arguments(self):
+        name, arguments = _tool_call({"function": {"name": "notebook_add", "arguments": {"title": "x"}}})
+        self.assertEqual(name, "notebook_record")
+        self.assertEqual(arguments["title"], "x")
+
     def test_find_functions_requires_a_real_query(self):
         empty = json.loads(self.tools.execute("find_functions", {"query": ""}))
         self.assertEqual(empty["matches"], [])
@@ -260,6 +270,17 @@ class NativeToolsTests(unittest.TestCase):
         self.assertEqual(result, "User declined the patch.")
         self.assertEqual(self.view.writes, [])
         self.assertEqual(len(_choice_calls), 1)
+
+    def test_triage_search_indexes_functions_beyond_old_two_thousand_cap(self):
+        functions = [type("LargeFunction", (), {"start": 0x500000 + index * 0x10, "name": f"function_{index}", "type": "void ()", "hlil": []})() for index in range(2205)]
+        functions[-1].name = "storekit_purchase_handler"
+        view = View()
+        view.functions = functions
+        native = NativeTools(view, functions[0], ExternalCommandIndex(), 12000)
+        result = json.loads(native.execute("semantic_search", {"query": "storekit purchase", "max_results": 10}))
+        self.assertTrue(any(row["name"] == "storekit_purchase_handler" for row in result["matches"]))
+        self.assertEqual(result["total_functions"], 2205)
+        self.assertFalse(result["truncated"])
 
 
 if __name__ == "__main__":

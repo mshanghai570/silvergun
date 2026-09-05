@@ -89,7 +89,9 @@ class OpenAICompatibleClient:
             message = choice["message"]
         except (KeyError, IndexError, TypeError) as error:
             raise ProviderError("The provider returned no chat completion choices.") from error
-        content = _text_content(message.get("content", "")) if isinstance(message, dict) else ""
+        if not isinstance(message, dict):
+            raise ProviderError("The provider returned a chat choice without a message object.", operation="parse_response", next_action="Retry the request or choose another provider.")
+        content = _text_content(message.get("content", ""))
         calls = message.get("tool_calls", []) if isinstance(message, dict) else []
         tool_calls = tuple(call for call in calls if isinstance(call, dict)) if isinstance(calls, list) else ()
         content, legacy_calls = _extract_legacy_tool_calls(content)

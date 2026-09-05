@@ -194,17 +194,18 @@ BINARYNINJA_TOOLS = {
 class BinaryNinjaBuiltinsAdapter:
     """Adapter for Binary Ninja's built-in analysis capabilities."""
     
-    __slots__ = ("_bv", "_available", "_error")
+    __slots__ = ("_bv", "_function", "_available", "_error")
 
     def __init__(self) -> None:
         self._bv = None
+        self._function = None
         self._available = False
         self._error = None
 
     @classmethod
-    def create(cls, bv) -> "BinaryNinjaBuiltinsAdapter":
+    def create(cls, bv, function=None) -> "BinaryNinjaBuiltinsAdapter":
         adapter = cls()
-        adapter.discover(bv)
+        adapter.discover(bv, function)
         return adapter
 
     @property
@@ -281,8 +282,9 @@ class BinaryNinjaBuiltinsAdapter:
             ),
         ]
 
-    def discover(self, bv) -> None:
+    def discover(self, bv, function=None) -> None:
         self._bv = bv
+        self._function = function
         try:
             # Binary Ninja built-ins are always available if we have a BinaryView
             if bv is not None and hasattr(bv, 'functions'):
@@ -334,191 +336,160 @@ class BinaryNinjaBuiltinsAdapter:
 
     def _analyze(self, args: dict[str, Any]) -> str:
         emit_tool_started("bn_analyze", "Running Binary Ninja analysis")
-        
         address = args.get("address")
-        function_only = args.get("function_only", False)
-        full_analysis = args.get("full_analysis", False)
-        
+        function_only = bool(args.get("function_only", False))
+        full_analysis = bool(args.get("full_analysis", False))
         try:
+            functions_analyzed = 0
+            mode = "address" if address else ("function_only" if function_only else ("full_analysis" if full_analysis else "current_function"))
             if address:
-                # Analyze specific address
                 try:
-                    addr = int(address, 0)
-                    func = self._bv.get_function_at(addr) or self._bv.get_function_containing(addr)
-                    if func:
-                        emit_tool_progress("bn_analyze", f"Analyzing function at {hex(func.start)}")
-                        # Trigger BN analysis on this function
-                        func.analyze()
-                        emit_tool_result("bn_analyze", f"Analysis completed for {func.name}", {
-                            "address": hex(func.start),
-                            "name": func.name,
-                            "size": getattr(func, 'total_bytes', 0)
-                        })
-                    else:
-                        emit_tool_result("bn_analyze", "No function found at specified address", {"address": address})
-                except ValueError:
-                    emit_tool_result("bn_analyze", "Invalid address format", {"address": address})
+                    addr = int(str(address), 0)
+                except (TypeError, ValueError):
+                    return json.dumps({"tool": "bn_analyze", "status": "invalid_address", "functions_analyzed": 0, "address": address, "available": True})
+                func = self._bv.get_function_at(addr) or self._bv.get_function_containing(addr)
+                if func is None:
+                    return json.dumps({"tool": "bn_analyze", "status": "missing_function", "functions_analyzed": 0, "address": address, "available": True})
+                emit_tool_progress("bn_analyze", f"Analyzing function at {hex(func.start)}")
+                func.analyze()
+                functions_analyzed = 1
             elif function_only:
-                # Analyze current function if available
-                if hasattr(self._bv, 'current_function') and self._bv.current_function:
-                    func = self._bv.current_function
-                    emit_tool_progress("bn_analyze", f"Analyzing current function: {func.name}")
-                    func.analyze()
-                    emit_tool_result("bn_analyze", f"Current function analysis completed", {
-                        "address": hex(func.start),
-                        "name": func.name
-                    })
+                func = getattr(self._bv, "current_function", None)
+                if func is None:
+                    return json.dumps({"tool": "bn_analyze", "status": "missing_current_function", "functions_analyzed": 0, "available": True})
+                emit_tool_progress("bn_analyze", f"Analyzing current function: {func.name}")
+                func.analyze()
+                functions_analyzed = 1
             else:
-                # Full binary analysis
-                emit_tool_progress("bn_analyze", "Running full binary analysis")
-                functions_analyzed = 0
-                for func in self._bv.functions[:1000]:  # Limit for performance
+                # address wins over function_only/full_analysis. Without an
+                # explicit full_analysis request, analyze only the current function.
+                if not full_analysis:
+                    func = getattr(self._bv, "current_function", None) or self._function
+                    if func is None:
+                        return json.dumps({"tool": "bn_analyze", "status": "missing_current_function", "functions_analyzed": 0, "available": True})
                     func.analyze()
-                    functions_analyzed += 1
-                    if functions_analyzed % 100 == 0:
-                        emit_tool_progress("bn_analyze", f"Analyzed {functions_analyzed} functions")
-                
-                emit_tool_result("bn_analyze", f"Full analysis completed: {functions_analyzed} functions", {
-                    "functions_analyzed": functions_analyzed
-                })
-            
+                    functions_analyzed = 1
+                else:
+                    emit_tool_progress("bn_analyze", "Running full binary analysis")
+                    for func in list(getattr(self._bv, "functions", []))[:1000]:
+                        func.analyze()
+                        functions_analyzed += 1
+                        if functions_analyzed % 100 == 0:
+                            emit_tool_progress("bn_analyze", f"Analyzed {functions_analyzed} functions")
+            if functions_analyzed == 0:
+                return json.dumps({"tool": "bn_analyze", "status": "no_work", "functions_analyzed": 0, "mode": mode, "available": True})
+            payload = {"tool": "bn_analyze", "status": "completed", "functions_analyzed": functions_analyzed, "mode": mode, "available": True}
+            emit_tool_result("bn_analyze", f"Analysis completed: {functions_analyzed} function(s)", {"functions_analyzed": functions_analyzed, "mode": mode})
             emit_tool_completed("bn_analyze", "Binary Ninja analysis completed")
-            return json.dumps({
-                "tool": "bn_analyze",
-                "status": "completed",
-                "functions_analyzed": functions_analyzed if 'functions_analyzed' in locals() else 1,
-                "available": True,
-            })
-            
+            return json.dumps(payload, separators=(",", ":"))
         except Exception as e:
             emit_tool_failed("bn_analyze", f"Analysis failed: {e}", str(e))
-            return json.dumps({"error": str(e), "tool": "bn_analyze"})
+            return json.dumps({"error": str(e), "tool": "bn_analyze", "status": "failure"})
 
     def _decompile(self, args: dict[str, Any]) -> str:
         emit_tool_started("bn_decompile", "Running Binary Ninja decompiler")
-        
         address = args.get("address")
-        timeout = args.get("timeout", 30)
-        
+        try:
+            requested_timeout = max(1, min(60, int(args.get("timeout", 30))))
+        except (TypeError, ValueError):
+            requested_timeout = 30
         try:
             if address:
                 try:
-                    addr = int(address, 0)
-                    func = self._bv.get_function_at(addr) or self._bv.get_function_containing(addr)
-                    if func:
-                        emit_tool_progress("bn_decompile", f"Decompiling function at {hex(func.start)}")
-                        # Trigger decompilation
-                        hlil = getattr(func, 'hlil', None)
-                        if hlil is not None:
-                            # HLIL is already available
-                            emit_tool_result("bn_decompile", f"HLIL available for {func.name}", {
-                                "address": hex(func.start),
-                                "hlil_available": True,
-                                "instruction_count": len(list(hlil))
-                            })
-                        else:
-                            # Force reanalysis which may trigger decompilation
-                            func.analyze()
-                            emit_tool_result("bn_decompile", f"Decompilation requested for {func.name}", {
-                                "address": hex(func.start)
-                            })
-                    else:
-                        emit_tool_result("bn_decompile", "No function found at specified address", {"address": address})
-                except ValueError:
-                    emit_tool_result("bn_decompile", "Invalid address format", {"address": address})
+                    addr = int(str(address), 0)
+                except (TypeError, ValueError):
+                    return json.dumps({"tool": "bn_decompile", "status": "invalid_address", "address": address, "available": True})
+                func = self._bv.get_function_at(addr) or self._bv.get_function_containing(addr)
+                if func is None:
+                    return json.dumps({"tool": "bn_decompile", "status": "missing_function", "address": address, "available": True})
             else:
-                # Decompile current function
-                if hasattr(self._bv, 'current_function') and self._bv.current_function:
-                    func = self._bv.current_function
-                    emit_tool_progress("bn_decompile", f"Decompiling current function: {func.name}")
-                    hlil = getattr(func, 'hlil', None)
-                    if hlil is not None:
-                        emit_tool_result("bn_decompile", f"HLIL available for current function", {
-                            "address": hex(func.start),
-                            "hlil_available": True
-                        })
-                    else:
-                        func.analyze()
-                        emit_tool_result("bn_decompile", f"Decompilation requested for current function")
-            
-            emit_tool_completed("bn_decompile", "Decompilation completed")
-            return json.dumps({
-                "tool": "bn_decompile",
-                "status": "completed",
-                "available": True,
-            })
-            
+                func = getattr(self._bv, "current_function", None) or self._function
+                if func is None:
+                    return json.dumps({"tool": "bn_decompile", "status": "missing_current_function", "available": True})
+            emit_tool_progress("bn_decompile", f"Decompiling {func.name} at {hex(func.start)}")
+            text = self._hlil_text_bounded(getattr(func, "hlil", None), 6000)
+            if not text:
+                return json.dumps({"tool": "bn_decompile", "status": "unavailable_hlil", "address": hex(func.start), "function": func.name, "timeout_requested": requested_timeout, "timeout_supported": False, "available": True})
+            payload = {"tool": "bn_decompile", "status": "completed", "address": hex(func.start), "function": func.name, "hlil": text, "hlil_available": True, "timeout_requested": requested_timeout, "timeout_supported": False, "timeout_note": "Binary Ninja Python API does not expose a timeout for HLIL materialization; output is bounded."}
+            emit_tool_result("bn_decompile", f"Decompiled {func.name}", {"address": hex(func.start), "length": len(text)})
+            emit_tool_completed("bn_decompile", "Decompilation completed with HLIL evidence")
+            return json.dumps(payload, separators=(",", ":"))
         except Exception as e:
             emit_tool_failed("bn_decompile", f"Decompilation failed: {e}", str(e))
-            return json.dumps({"error": str(e), "tool": "bn_decompile"})
+            return json.dumps({"error": str(e), "tool": "bn_decompile", "status": "failure"})
+
+    @staticmethod
+    def _hlil_text_bounded(hlil, limit: int) -> str:
+        if hlil is None:
+            return ""
+        lines = []
+        try:
+            for block in hlil:
+                for instruction in block:
+                    lines.append(str(instruction))
+                    if sum(len(line) + 1 for line in lines) >= limit:
+                        return "\n".join(lines)[:limit]
+        except TypeError:
+            return str(hlil)[:limit]
+        return "\n".join(lines)[:limit]
 
     def _find_cross_references(self, args: dict[str, Any]) -> str:
         emit_tool_started("bn_find_cross_references", "Finding cross-references")
-        
         address_str = args.get("address", "")
-        direction = args.get("direction", "both")
-        max_depth = args.get("max_depth", 3)
-        
-        if not address_str:
-            return json.dumps({"error": "address is required", "tool": "bn_find_cross_references"})
-        
+        direction = str(args.get("direction", "both")).lower()
+        if direction not in {"both", "callers", "callees"}:
+            return json.dumps({"error": "direction must be callers, callees, or both", "tool": "bn_find_cross_references"})
         try:
-            address = int(address_str, 0)
-        except ValueError:
-            return json.dumps({"error": f"Invalid address: {address_str}", "tool": "bn_find_cross_references"})
-        
-        func = self._bv.get_function_at(address) or self._bv.get_function_containing(address)
-        if func is None:
-            emit_tool_result("bn_find_cross_references", "No function found at address", {"address": hex(address)})
-            return json.dumps({"error": "No function at address", "address": hex(address)})
-        
-        emit_tool_progress("bn_find_cross_references", f"Analyzing xrefs for {func.name} at {hex(func.start)}")
-        
-        cross_refs = {"callers": [], "callees": []}
-        
-        # Get callers
-        if direction in ("both", "callers"):
-            for caller in getattr(func, 'callers', []):
-                cross_refs["callers"].append({
-                    "address": hex(caller.start),
-                    "name": caller.name,
-                    "type": "caller"
-                })
-        
-        # Get callees
-        if direction in ("both", "callees"):
-            for callee in getattr(func, 'callees', []):
-                cross_refs["callees"].append({
-                    "address": hex(callee.start),
-                    "name": callee.name,
-                    "type": "callee"
-                })
-        
-        emit_tool_result("bn_find_cross_references", f"Found {len(cross_refs['callers'])} callers and {len(cross_refs['callees'])} callees", {
-            "callers_count": len(cross_refs["callers"]),
-            "callees_count": len(cross_refs["callees"]),
-            "total": len(cross_refs["callers"]) + len(cross_refs["callees"])
-        })
-        
+            address = int(str(address_str), 0)
+            max_depth = min(5, max(1, int(args.get("max_depth", 3))))
+        except (TypeError, ValueError):
+            return json.dumps({"error": f"Invalid address or max_depth: {address_str}", "tool": "bn_find_cross_references"})
+        root = self._bv.get_function_at(address) or self._bv.get_function_containing(address)
+        if root is None:
+            return json.dumps({"error": "No function at address", "address": hex(address), "tool": "bn_find_cross_references"})
+        seen = {root.start: (root, 0)}
+        frontier = [root]
+        for depth in range(max_depth):
+            next_frontier = []
+            for current in frontier:
+                neighbors = []
+                if direction in ("both", "callers"):
+                    neighbors.extend(getattr(current, "callers", []))
+                if direction in ("both", "callees"):
+                    neighbors.extend(getattr(current, "callees", []))
+                for neighbor in neighbors:
+                    if getattr(neighbor, "start", None) not in seen and len(seen) < 256:
+                        seen[neighbor.start] = (neighbor, depth + 1)
+                        next_frontier.append(neighbor)
+            frontier = next_frontier
+            if not frontier:
+                break
+        nodes = [{"address": hex(function.start), "name": function.name, "depth": depth} for function, depth in seen.values()]
+        edges = []
+        for function, source_depth in seen.values():
+            if direction in ("both", "callees"):
+                for target in getattr(function, "callees", []):
+                    if target.start in seen and source_depth + 1 <= max_depth:
+                        edges.append({"from": hex(function.start), "to": hex(target.start), "kind": "calls", "depth": source_depth + 1})
+            if direction in ("both", "callers"):
+                for target in getattr(function, "callers", []):
+                    if target.start in seen and source_depth + 1 <= max_depth:
+                        edges.append({"from": hex(target.start), "to": hex(function.start), "kind": "calls", "depth": source_depth + 1})
+        payload = {"tool": "bn_find_cross_references", "address": hex(root.start), "function": root.name, "direction": direction, "max_depth": max_depth, "nodes": nodes, "edges": edges, "total": len(nodes), "available": True}
+        emit_tool_result("bn_find_cross_references", f"Found {len(nodes) - 1} related functions", {"count": len(nodes) - 1})
         emit_tool_completed("bn_find_cross_references", "Cross-reference analysis completed")
-        
-        return json.dumps({
-            "tool": "bn_find_cross_references",
-            "address": hex(func.start),
-            "function": func.name,
-            "direction": direction,
-            "cross_refs": cross_refs,
-            "total": len(cross_refs["callers"]) + len(cross_refs["callees"]),
-            "available": True,
-        }, separators=(",", ":"))
+        return json.dumps(payload, separators=(",", ":"))
 
     def _search_strings(self, args: dict[str, Any]) -> str:
         emit_tool_started("bn_search_strings", "Searching for strings")
         
-        query = args.get("query", "")
-        case_sensitive = args.get("case_sensitive", False)
-        use_regex = args.get("regex", False)
-        min_length = args.get("min_length", 4)
+        query = str(args.get("query", ""))
+        case_sensitive = bool(args.get("case_sensitive", False))
+        use_regex = bool(args.get("regex", False))
+        try:
+            min_length = max(1, min(100, int(args.get("min_length", 4))))
+        except (TypeError, ValueError):
+            return json.dumps({"error": "min_length must be an integer", "tool": "bn_search_strings"})
         
         if not query:
             return json.dumps({"error": "query is required", "tool": "bn_search_strings"})
@@ -538,25 +509,17 @@ class BinaryNinjaBuiltinsAdapter:
                 
                 if use_regex:
                     try:
-                        if not case_sensitive:
-                            string_value_lower = string_value.lower()
-                            query_lower = query.lower()
-                            if re.search(query_lower, string_value_lower):
-                                matches.append({
-                                    "address": hex(getattr(string, 'address', 0)),
-                                    "value": string_value,
-                                    "length": len(string_value)
-                                })
-                        else:
-                            if re.search(query, string_value):
-                                matches.append({
-                                    "address": hex(getattr(string, 'address', 0)),
-                                    "value": string_value,
-                                    "length": len(string_value)
-                                })
-                    except Exception:
-                        # Invalid regex pattern
-                        continue
+                        flags = 0 if case_sensitive else re.IGNORECASE
+                        matched = re.search(query, string_value, flags) is not None
+                    except re.error as error:
+                        emit_tool_failed("bn_search_strings", "Invalid regular expression", str(error))
+                        return json.dumps({"error": f"Invalid regular expression: {error}", "tool": "bn_search_strings", "status": "invalid_regex"})
+                    if matched:
+                        matches.append({
+                            "address": hex(getattr(string, 'address', 0)),
+                            "value": string_value,
+                            "length": len(string_value)
+                        })
                 else:
                     if not case_sensitive and query.lower() in string_value.lower():
                         matches.append({

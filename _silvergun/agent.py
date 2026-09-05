@@ -156,7 +156,15 @@ class LeanAgent:
                     emit_investigation_complete(route.intent, f"Investigation completed in {round_number} rounds")
                     return AgentResult(answer, route.intent, round_number)
                 
-                calls = [_normalized_tool_call(call, round_number, index) for index, call in enumerate(completion.tool_calls, start=1)]
+                calls = []
+                call_ids: set[str] = set()
+                for index, call in enumerate(completion.tool_calls, start=1):
+                    normalized_call = _normalized_tool_call(call, round_number, index)
+                    call_id = str(normalized_call["id"])
+                    if call_id in call_ids:
+                        normalized_call["id"] = f"{call_id}_{round_number}_{index}"
+                    call_ids.add(str(normalized_call["id"]))
+                    calls.append(normalized_call)
                 messages.append({"role": "assistant", "content": completion.content or "", "tool_calls": calls})
                 
                 for call in calls[:6]:

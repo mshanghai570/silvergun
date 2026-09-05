@@ -118,7 +118,7 @@ class AgentTask(BackgroundTaskThread):
             settings = config()
             self.progress = "Silvergun: discovering plugin capabilities"
             adapter_registry = AdapterRegistry.get()
-            adapter_registry.discover(self._bv)
+            adapter_registry.discover(self._bv, self._function)
             self.progress = "Silvergun: contacting provider"
             client = OpenAICompatibleClient(settings, api_key(settings.normalized_base_url))
             native = NativeTools(self._bv, self._function, ExternalCommandIndex(), settings.max_context_chars)
