@@ -254,6 +254,36 @@ class RouterTests(unittest.TestCase):
         self.assertNotEqual(CapabilityRouter().route("A mapless string literal", []).intent, "map")
         self.assertEqual(CapabilityRouter().route("Please rename this function", []).intent, "rename")
 
+    def test_natural_language_outcomes_route_to_the_requested_action(self):
+        cases = (
+            ("Could you make this function always return true?", "patch", "apply_patch"),
+            ("Give this function a meaningful name", "rename", "rename_function"),
+            ("Set this function's signature based on its arguments", "types", "apply_function_type"),
+            ("Leave a comment explaining the authentication check", "annotate", "annotate_function"),
+            ("What calls this function?", "xrefs", "get_xrefs"),
+            ("Show me the hardcoded API endpoints", "strings", "bn_search_strings"),
+        )
+        for request, intent, tool in cases:
+            with self.subTest(request=request):
+                route = CapabilityRouter().route(request, [])
+                self.assertEqual(route.intent, intent)
+                self.assertIn(tool, route.tools)
+
+    def test_natural_language_patch_outcome_keeps_discovery_and_mutation(self):
+        route = CapabilityRouter().route("Find the license check and make it always return true", [])
+        self.assertEqual(route.intent, "patch")
+        self.assertIn("find_functions", route.tools)
+        self.assertIn("apply_patch", route.tools)
+
+    def test_rollback_phrase_routes_to_undo(self):
+        route = CapabilityRouter().route("Go back to before the last patch", [])
+        self.assertEqual(route.intent, "patch")
+        self.assertIn("undo_last_patch", route.tools)
+
+    def test_find_callers_is_not_mistaken_for_a_compound_mutation(self):
+        route = CapabilityRouter().route("Find every function that calls this one", [])
+        self.assertNotIn("apply_patch", route.tools)
+
 
 if __name__ == "__main__":
     unittest.main()

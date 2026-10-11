@@ -31,10 +31,38 @@ class Route:
 
 
 # Discovery terms that should prioritize search/analysis over mutation
-DISCOVERY_TERMS = ("find", "search", "locate", "identify", "discover", "analyze", "audit", "review", "investigate", "scan", "detect")
+DISCOVERY_TERMS = ("find", "search", "locate", "identify", "discover", "analyze", "audit", "review", "investigate", "scan", "detect", "look for")
 
 # Mutation terms that indicate the user wants to modify
-MUTATION_TERMS = ("patch", "fix", "nop", "modify", "instrument", "rename", "apply", "change", "bypass", "assemble", "undo", "revert", "restore")
+MUTATION_TERMS = (
+    "patch", "fix", "nop", "modify", "instrument", "rename", "apply", "change",
+    "bypass", "assemble", "undo", "revert", "restore", "replace", "annotate",
+)
+
+# Natural requests often describe the desired outcome instead of naming our tool.
+# These phrases are deliberately concrete: broad words such as "make" and "set"
+# are not used for routing unless they occur in one of these goal patterns.
+OUTCOME_PATTERNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("patch", (
+        r"\b(?:make|force)\s+(?:this|the|it|function|check).{0,35}\breturn\s+(?:true|false|zero|one|0|1)\b",
+        r"\b(?:skip|remove|disable|defeat)\s+(?:this|the|a|an)?\s*(?:check|branch|guard|validation)\b",
+        r"\b(?:always|never)\s+(?:take|follow|execute|return)\b",
+    )),
+    ("rename", (
+        r"\b(?:call|name)\s+(?:this|the|it)\s+(?:function\s+)?[a-z_]\w*",
+        r"\bgive\s+(?:this|the)\s+function\s+(?:a\s+)?(?:better|meaningful|descriptive)\s+name\b",
+    )),
+    ("types", (
+        r"\bset\s+(?:this|the|its)?\s*(?:function\s+)?(?:type|signature|prototype)\b",
+        r"\b(?:this|the)\s+function\s+(?:takes?|returns?)\b",
+    )),
+    ("annotate", (
+        r"\b(?:leave|add|write|set)\s+(?:a\s+)?(?:comment|note|annotation|tag)\b",
+    )),
+    ("patch", (
+        r"\b(?:roll|go)\s+back\s+(?:the\s+)?(?:last|latest|previous)?\s*(?:patch|change|edit)\b",
+    )),
+)
 
 def _has_term(text: str, term: str) -> bool:
     term = term.strip().lower()
@@ -46,7 +74,17 @@ def _has_discovery_intent(text: str) -> bool:
 
 
 def _has_mutation_intent(text: str) -> bool:
-    return any(_has_term(text, term) for term in MUTATION_TERMS)
+    return any(_has_term(text, term) for term in MUTATION_TERMS) or any(
+        re.search(pattern, text) for _intent, patterns in OUTCOME_PATTERNS for pattern in patterns
+    )
+
+
+def _outcome_intents(text: str) -> set[str]:
+    return {
+        intent
+        for intent, patterns in OUTCOME_PATTERNS
+        if any(re.search(pattern, text) for pattern in patterns)
+    }
 
 
 # The first tool is always a compact snapshot; the rest are intent-specific.
@@ -59,17 +97,17 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("category", ("category", "find functions related to", "find all", "purchase", "auth", "login", "logout", "network", "payment", "security", "validation", "storage", "premium", "unlock", "entitlement", "subscription", "license", "in-app", "iap"), ("semantic_search", "boolhunter_find_category")),
     ("boolean", ("boolean", "is_", "has_", "can_", "check_", "validate_", "enabled", "disabled", "is_active", "is_valid", "security check", "authentication check", "permission check"), ("boolhunter_quick_scan", "boolhunter_analyze", "get_function_context")),
     ("vulnerabilities", ("vulnerability", "vulnerabilities", "vuln", "vulnerable", "exploit", "overflow", "use after", "uaf", "taint", "security"), ("get_function_context", "get_xrefs", "review_vulnerabilities", "boolhunter_quick_scan")),
-    ("strings", ("string", "strings", "url", "urls", "http", "https", "ascii", "password", "passwords", "secret", "secrets", "email", "domain", "hostname", "token", "apikey", "api key"), ("bn_search_strings", "find_functions", "get_xrefs")),
+    ("strings", ("string", "strings", "url", "urls", "endpoint", "endpoints", "hardcoded text", "text literal", "http", "https", "ascii", "password", "passwords", "secret", "secrets", "email", "domain", "hostname", "token", "apikey", "api key"), ("bn_search_strings", "find_functions", "get_xrefs")),
     ("symbols", ("symbol", "symbols", "imports", "import table", "exports", "exported", "function named", "functions named", "name search"), ("bn_search_symbols", "bn_find_functions", "find_functions", "semantic_search")),
     ("verify", ("verify", "evidence", "proven", "prove", "source", "grounded"), ("get_function_context", "get_xrefs", "get_verification")),
     ("map", ("code map", "map", "relationship", "execution path", "call graph"), ("get_function_context", "code_map", "boolhunter_batch_scan")),
     ("explain", ("explain", "understand", "what does", "walk through"), ("get_function_context", "get_xrefs")),
-    ("annotate", ("annotate", "comment", "document", "tag"), ("get_function_context", "annotate_function")),
+    ("annotate", ("annotate", "annotation", "comment", "leave a note", "add a note", "document", "tag"), ("get_function_context", "annotate_function")),
     ("types", ("type", "signature", "prototype", "parameter", "return type", "struct"), ("get_function_context", "get_type_evidence", "apply_function_type")),
-    ("xrefs", ("xref", "cross reference", "caller", "callers", "callee", "callees", "call graph"), ("get_function_context", "get_xrefs")),
+    ("xrefs", ("xref", "cross reference", "caller", "callers", "callee", "callees", "call graph", "what calls", "who calls", "called by", "calls this", "what does this call"), ("get_function_context", "get_xrefs")),
     # Mutation intents (lower priority when discovery terms also present)
     ("patch", ("patch", "fix", "nop", "modify", "instrument", "assemble", "instruction"), ("get_function_context", "apply_patch", "disassemble", "apply_assembly_patch", "patch_history", "undo_last_patch")),
-    ("rename", ("rename", "name this", "better name", "symbol name"), ("get_function_context", "rename_function")),
+    ("rename", ("rename", "name this", "call this function", "better name", "meaningful name", "descriptive name", "symbol name"), ("get_function_context", "rename_function")),
     ("plugins", ("plugin", "extension", "capability", "command"), ("get_function_context", "search_capabilities", "invoke_external_command")),
     ("batch_scan", ("batch scan", "scan multiple", "scan all functions", "scan many", "analyze many"), ("boolhunter_batch_scan", "boolhunter_quick_scan")),
     ("binaryninja", ("binary ninja", "bn " , "native", "built-in", "internal"), ("bn_analyze", "bn_decompile", "bn_find_cross_references", "bn_search_strings", "bn_search_symbols", "bn_find_functions", "bn_get_metadata")),
@@ -106,6 +144,7 @@ class CapabilityRouter:
 
     def route(self, request: str, capabilities: Sequence[ExternalCapability]) -> Route:
         normalized = re.sub(r"\s+", " ", request.lower()).strip()
+        outcome_intents = _outcome_intents(normalized)
         
         # Detect compound intent: discovery + mutation
         has_discovery = _has_discovery_intent(normalized)
@@ -122,6 +161,8 @@ class CapabilityRouter:
         
         for intent, terms, tools in INTENTS:
             score = sum(1 for term in terms if _has_term(normalized, term))
+            if intent in outcome_intents:
+                score += 6
             if explicit_provider_search and intent == "search":
                 score += 3
             if named_plugin_request and intent == "search":
