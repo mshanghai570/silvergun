@@ -254,6 +254,11 @@ class RouterTests(unittest.TestCase):
         self.assertNotEqual(CapabilityRouter().route("A mapless string literal", []).intent, "map")
         self.assertEqual(CapabilityRouter().route("Please rename this function", []).intent, "rename")
 
+    def test_variable_rename_exposes_approved_builtin_mutation(self):
+        route = CapabilityRouter().route("Rename the local variable buffer to request_data", [])
+        self.assertEqual(route.intent, "rename")
+        self.assertIn("bn_rename_variable", route.tools)
+
     def test_natural_language_outcomes_route_to_the_requested_action(self):
         cases = (
             ("Could you make this function always return true?", "patch", "apply_patch"),

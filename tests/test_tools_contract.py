@@ -211,6 +211,61 @@ class NativeToolsTests(unittest.TestCase):
         self.assertEqual(self.view.writes, [])
         self.assertEqual(_choice_calls, [])
 
+    def test_failed_read_does_not_unlock_a_mutation(self):
+        class Settings:
+            max_steps = 3
+            parallel_jobs = 1
+            model = "test-model"
+
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, _model, _messages, _tools, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    call = {"id": "missing", "function": {"name": "get_function_context", "arguments": '{"address":"0x999"}'}}
+                    return type("Completion", (), {"content": "", "tool_calls": (call,)})()
+                if self.calls == 2:
+                    call = {"id": "patch", "function": {"name": "apply_patch", "arguments": '{"address":"0x401000","bytes_hex":"cc","reason":"test"}'}}
+                    return type("Completion", (), {"content": "", "tool_calls": (call,)})()
+                return type("Completion", (), {"content": "Stopped safely.", "tool_calls": ()})()
+
+        result = LeanAgent(Client(), Settings()).run("Patch this function", self.tools)
+        self.assertEqual(result.answer, "Stopped safely.")
+        self.assertEqual(self.view.writes, [])
+        self.assertEqual(_choice_calls, [])
+
+    def test_excess_tool_calls_are_capped_without_orphaning_transcript_ids(self):
+        testcase = self
+
+        class Settings:
+            max_steps = 2
+            parallel_jobs = 1
+            model = "test-model"
+
+        class Client:
+            def __init__(self):
+                self.calls = 0
+
+            def chat(self, _model, messages, _tools, **_kwargs):
+                self.calls += 1
+                if self.calls == 1:
+                    calls = tuple(
+                        {"id": f"call_{index}", "function": {"name": "get_function_context", "arguments": "{}"}}
+                        for index in range(8)
+                    )
+                    return type("Completion", (), {"content": "", "tool_calls": calls})()
+                assistant = next(message for message in messages if message.get("role") == "assistant")
+                retained_ids = {call["id"] for call in assistant["tool_calls"]}
+                result_ids = {message["tool_call_id"] for message in messages if message.get("role") == "tool"}
+                testcase.assertEqual(len(retained_ids), 6)
+                testcase.assertEqual(retained_ids, result_ids)
+                return type("Completion", (), {"content": "Transcript is valid.", "tool_calls": ()})()
+
+        result = LeanAgent(Client(), Settings()).run("Explain this function", self.tools)
+        self.assertEqual(result.answer, "Transcript is valid.")
+
     def test_patch_byte_parser_accepts_prefixes_and_rejects_invalid_text(self):
         self.assertEqual(_hex_bytes("0x90 0xCC"), b"\x90\xcc")
         with self.assertRaises(ValueError):

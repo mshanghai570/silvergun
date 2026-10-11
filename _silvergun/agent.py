@@ -64,8 +64,9 @@ ROUTE_GUIDANCE = {
     "continue": "Restore the case file with notebook_context first, then re-verify the recorded leads with fresh evidence before acting on them.",
 }
 
-MUTATION_TOOLS = frozenset({"apply_patch", "apply_assembly_patch", "undo_last_patch", "rename_function", "apply_function_type", "annotate_function", "invoke_external_command"})
+MUTATION_TOOLS = frozenset({"apply_patch", "apply_assembly_patch", "undo_last_patch", "rename_function", "bn_rename_variable", "apply_function_type", "annotate_function", "invoke_external_command"})
 MAX_CAPABILITY_EXECUTIONS = 24
+MAX_TOOL_CALLS_PER_ROUND = 6
 EVIDENCE_TOOLS = frozenset({
     "get_function_context", "get_xrefs", "get_type_evidence", "review_vulnerabilities",
     "semantic_search", "query_binary", "get_verification", "code_map", "bn_analyze",
@@ -174,9 +175,15 @@ class LeanAgent:
                         normalized_call["id"] = f"{call_id}_{round_number}_{index}"
                     call_ids.add(str(normalized_call["id"]))
                     calls.append(normalized_call)
+                # Keep the transcript protocol-valid and the execution budget
+                # strict. Every assistant tool call retained here receives one
+                # matching tool result below; excess provider calls are deferred
+                # to a later round instead of leaving orphaned call IDs.
+                remaining = MAX_CAPABILITY_EXECUTIONS - capability_executions
+                calls = calls[:min(MAX_TOOL_CALLS_PER_ROUND, remaining)]
                 messages.append({"role": "assistant", "content": completion.content or "", "tool_calls": calls})
                 
-                for call in calls[:6]:
+                for call in calls:
                     call_id = str(call["id"])
                     name = "unknown_tool"
                     try:
@@ -205,7 +212,7 @@ class LeanAgent:
                                     emit_tool_result(name, f"Normalized {len(normalized_result.evidence)} structured evidence items", {"evidence_count": len(normalized_result.evidence), "capability_id": name})
                                 if not normalized_result.success:
                                     emit_tool_failed(name, normalized_result.failure.display() if normalized_result.failure else "Capability failed", normalized_result.summary)
-                            if name in EVIDENCE_TOOLS and not result.startswith(("Tool error:", "Unexpected tool error:")):
+                            if name in EVIDENCE_TOOLS and _is_usable_evidence_result(result, normalized_result if spec is not None else None):
                                 evidence_collected = True
                             if tool_call_counts[name] >= 2:
                                 # Break the repeat-exploration loop: give the model a
@@ -338,3 +345,17 @@ def _normalized_tool_call(call: dict[str, Any], round_number: int, index: int) -
     normalized = dict(call)
     normalized["id"] = str(call.get("id") or f"call_{round_number}_{index}")
     return normalized
+
+
+def _is_usable_evidence_result(result: str, normalized_result=None) -> bool:
+    """Reject failed/empty reads as mutation-enabling evidence."""
+    if normalized_result is not None and not normalized_result.success:
+        return False
+    text = result.strip().lower()
+    if not text:
+        return False
+    failure_prefixes = (
+        "tool error:", "unexpected tool error:", "invalid ", "no function ",
+        "no functions ", "addresses must ", "adapter not available",
+    )
+    return not text.startswith(failure_prefixes)

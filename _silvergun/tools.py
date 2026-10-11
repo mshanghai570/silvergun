@@ -476,6 +476,8 @@ class NativeTools:
         except ValueError as error:
             return f"Invalid patch request: {error}"
         original = bytes(self.bv.read(address, len(replacement)))
+        if len(original) != len(replacement):
+            return f"Patch range at {hex(address)} is not fully readable ({len(original)}/{len(replacement)} bytes); nothing was written."
         reason = str(args.get("reason", ""))
         prompt = f"Apply patch at {hex(address)}?\n\nBefore: {original.hex(' ')}\nAfter:  {replacement.hex(' ')}\n\nReason: {reason}"
         if not self._confirm("Apply Silvergun Patch", prompt):
@@ -483,21 +485,33 @@ class NativeTools:
         written = self.bv.write(address, replacement)
         self._invalidate_snapshot(address)
         if written != len(replacement):
-            self.bv.write(address, original)
-            self._invalidate_snapshot(address)
-            return f"Patch failed to write fully ({written}/{len(replacement)} bytes); original bytes restored."
+            restored = self._restore_bytes(address, original)
+            state = "original bytes restored" if restored else "rollback could not be verified; inspect the live bytes immediately"
+            return f"Patch failed to write fully ({written}/{len(replacement)} bytes); {state}."
+        verified = bytes(self.bv.read(address, len(replacement)))
+        if verified != replacement:
+            restored = self._restore_bytes(address, original)
+            state = "original bytes restored" if restored else "rollback could not be verified; inspect the live bytes immediately"
+            return f"Patch verification failed after writing; {state} and no journal entry was created."
         self._verify_analysis()
         journal = PatchJournal(self._binary_filename())
-        journal.record(address, original, replacement, reason, tool="apply_patch")
+        journal_warning = ""
+        try:
+            journal.record(address, original, replacement, reason, tool="apply_patch")
+        except OSError as error:
+            journal_warning = f"Patch applied, but the local undo journal could not be written: {error}"
         summary = journal.summary()
-        return json.dumps({
+        payload = {
             "applied": True,
             "address": hex(address),
             "original_hex": original.hex(" "),
             "replacement_hex": replacement.hex(" "),
             "pending_undo": summary["pending"],
             "note": "In-memory patch. Undo with undo_last_patch; save the database to persist it.",
-        }, separators=(",", ":"))
+        }
+        if journal_warning:
+            payload["warning"] = journal_warning
+        return json.dumps(payload, separators=(",", ":"))
 
     @_main_thread
     def _disassemble(self, args: dict[str, Any]) -> str:
@@ -554,6 +568,8 @@ class NativeTools:
 
         replacement, padded = self._pad_to(assembled, span, address)
         original = bytes(self.bv.read(address, span))
+        if len(original) != span:
+            return f"Patch range at {hex(address)} is not fully readable ({len(original)}/{span} bytes); nothing was written."
         before = self._disassembly_text(address, span)
         prompt = (
             f"Apply assembly patch at {hex(address)}?\n\n"
@@ -569,13 +585,22 @@ class NativeTools:
         written = self.bv.write(address, replacement)
         self._invalidate_snapshot(address)
         if written != len(replacement):
-            self.bv.write(address, original)
-            self._invalidate_snapshot(address)
-            return f"Patch failed to write fully ({written}/{len(replacement)} bytes); original bytes restored."
+            restored = self._restore_bytes(address, original)
+            state = "original bytes restored" if restored else "rollback could not be verified; inspect the live bytes immediately"
+            return f"Patch failed to write fully ({written}/{len(replacement)} bytes); {state}."
+        verified = bytes(self.bv.read(address, len(replacement)))
+        if verified != replacement:
+            restored = self._restore_bytes(address, original)
+            state = "original bytes restored" if restored else "rollback could not be verified; inspect the live bytes immediately"
+            return f"Patch verification failed after writing; {state} and no journal entry was created."
         self._verify_analysis()
         journal = PatchJournal(self._binary_filename())
-        journal.record(address, original, replacement, reason, tool="apply_assembly_patch")
-        return json.dumps({
+        journal_warning = ""
+        try:
+            journal.record(address, original, replacement, reason, tool="apply_assembly_patch")
+        except OSError as error:
+            journal_warning = f"Patch applied, but the local undo journal could not be written: {error}"
+        payload = {
             "applied": True,
             "address": hex(address),
             "assembly": assembly,
@@ -585,7 +610,10 @@ class NativeTools:
             "after_disassembly": self._disassembly_text(address, span),
             "pending_undo": journal.summary()["pending"],
             "note": "In-memory patch. Undo with undo_last_patch; save the database to persist it.",
-        }, separators=(",", ":"))
+        }
+        if journal_warning:
+            payload["warning"] = journal_warning
+        return json.dumps(payload, separators=(",", ":"))
 
     @_main_thread
     def _patch_history(self, _args: dict[str, Any]) -> str:
@@ -606,9 +634,21 @@ class NativeTools:
         try:
             address = int(str(entry.get("address", "0x0")), 16)
             original = bytes.fromhex(str(entry.get("original_hex", "")))
+            replacement = bytes.fromhex(str(entry.get("replacement_hex", "")))
         except ValueError as error:
             return f"The patch journal entry is invalid: {error}"
+        if not original or len(original) != len(replacement):
+            return "The patch journal entry is invalid: original and replacement bytes must have the same non-zero length."
         current = bytes(self.bv.read(address, len(original)))
+        if current != replacement:
+            return json.dumps({
+                "undone": False,
+                "conflict": True,
+                "address": hex(address),
+                "expected_hex": replacement.hex(" "),
+                "current_hex": current.hex(" "),
+                "message": "Undo refused because the bytes changed after this patch. Restore or review them manually; no bytes were written.",
+            }, separators=(",", ":"))
         prompt = (
             f"Undo patch at {hex(address)}?\n\n"
             f"Current: {current.hex(' ')}\n"
@@ -619,6 +659,18 @@ class NativeTools:
             return "User declined the undo."
         written = self.bv.write(address, original)
         self._invalidate_snapshot(address)
+        if written != len(original):
+            # Best effort: return the exact state and keep the journal entry
+            # pending, because we cannot truthfully claim the patch was undone.
+            current_after = bytes(self.bv.read(address, len(original)))
+            return json.dumps({
+                "undone": False,
+                "address": hex(address),
+                "written": written,
+                "expected": len(original),
+                "current_hex": current_after.hex(" "),
+                "message": "Undo did not restore the full byte range; the journal entry remains pending.",
+            }, separators=(",", ":"))
         self._verify_analysis()
         journal.mark_undone(entry)
         return json.dumps({
@@ -688,6 +740,12 @@ class NativeTools:
 
     def _binary_filename(self) -> str:
         return str(getattr(getattr(self.bv, "file", None), "filename", ""))
+
+    def _restore_bytes(self, address: int, original: bytes) -> bool:
+        """Best-effort rollback whose result is checked against the live view."""
+        self.bv.write(address, original)
+        self._invalidate_snapshot(address)
+        return bytes(self.bv.read(address, len(original))) == original
 
     def _verify_analysis(self) -> None:
         """Ask Binary Ninja to re-analyze after a write; optional and best-effort."""

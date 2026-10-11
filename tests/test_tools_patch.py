@@ -158,6 +158,25 @@ class PluginPatchTests(unittest.TestCase):
         self.assertEqual(result, "User declined the patch.")
         self.assertEqual(view.writes, [])
 
+    def test_patch_readback_failure_restores_original_and_is_not_journaled(self):
+        view, tools = self._tools(b"\x90")
+        STATE["approve"] = 1
+        real_read = view.read
+        reads = 0
+
+        def stale_read(address, length):
+            nonlocal reads
+            reads += 1
+            if reads == 2:
+                return b"\x90"
+            return real_read(address, length)
+
+        view.read = stale_read
+        result = tools.execute("apply_patch", {"address": "0x401000", "bytes_hex": "cc", "reason": "trap"})
+        self.assertIn("verification failed", result.lower())
+        self.assertEqual(view._data[0], 0x90)
+        self.assertEqual(PatchJournal("sample.bin").summary()["pending"], 0)
+
     def test_assembly_patch_rejects_replacement_larger_than_allowed_span(self):
         view, tools = self._tools(b"\x90\x90\x90\x90\x90\x90\x90\x90")
         STATE["approve"] = 1
@@ -174,6 +193,36 @@ class PluginPatchTests(unittest.TestCase):
         self.assertTrue(payload["undone"])
         self.assertEqual(view.writes[1][1], b"\xb8\x03\x00\x00\x00")
         self.assertEqual(payload["remaining"], 0)
+
+    def test_undo_refuses_to_overwrite_bytes_changed_after_patch(self):
+        view, tools = self._tools(b"\xb8\x03\x00\x00\x00")
+        STATE["approve"] = 1
+        tools.execute("apply_assembly_patch", {"address": "0x401000", "assembly": "mov eax, 6", "reason": "tune"})
+        view._data[:5] = b"\xb8\x07\x00\x00\x00"
+        writes_before = len(view.writes)
+        payload = json.loads(tools.execute("undo_last_patch", {}))
+        self.assertFalse(payload["undone"])
+        self.assertTrue(payload["conflict"])
+        self.assertEqual(len(view.writes), writes_before)
+        self.assertEqual(PatchJournal("sample.bin").summary()["pending"], 1)
+
+    def test_partial_undo_keeps_journal_entry_pending(self):
+        view, tools = self._tools(b"\xb8\x03\x00\x00\x00")
+        STATE["approve"] = 1
+        tools.execute("apply_assembly_patch", {"address": "0x401000", "assembly": "mov eax, 6", "reason": "tune"})
+        original_write = view.write
+
+        def partial_write(address, data):
+            if bytes(data) == b"\xb8\x03\x00\x00\x00":
+                original_write(address, data[:2])
+                return 2
+            return original_write(address, data)
+
+        view.write = partial_write
+        payload = json.loads(tools.execute("undo_last_patch", {}))
+        self.assertFalse(payload["undone"])
+        self.assertEqual(payload["written"], 2)
+        self.assertEqual(PatchJournal("sample.bin").summary()["pending"], 1)
 
     def test_undo_without_history_is_reported_plainly(self):
         _view, tools = self._tools(b"\xc3")

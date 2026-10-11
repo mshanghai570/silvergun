@@ -107,7 +107,7 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("xrefs", ("xref", "cross reference", "caller", "callers", "callee", "callees", "call graph", "what calls", "who calls", "called by", "calls this", "what does this call"), ("get_function_context", "get_xrefs")),
     # Mutation intents (lower priority when discovery terms also present)
     ("patch", ("patch", "fix", "nop", "modify", "instrument", "assemble", "instruction"), ("get_function_context", "apply_patch", "disassemble", "apply_assembly_patch", "patch_history", "undo_last_patch")),
-    ("rename", ("rename", "name this", "call this function", "better name", "meaningful name", "descriptive name", "symbol name"), ("get_function_context", "rename_function")),
+    ("rename", ("rename", "name this", "call this function", "better name", "meaningful name", "descriptive name", "symbol name", "variable name", "local name"), ("get_function_context", "rename_function", "bn_rename_variable")),
     ("plugins", ("plugin", "extension", "capability", "command"), ("get_function_context", "search_capabilities", "invoke_external_command")),
     ("batch_scan", ("batch scan", "scan multiple", "scan all functions", "scan many", "analyze many"), ("boolhunter_batch_scan", "boolhunter_quick_scan")),
     ("binaryninja", ("binary ninja", "bn " , "native", "built-in", "internal"), ("bn_analyze", "bn_decompile", "bn_find_cross_references", "bn_search_strings", "bn_search_symbols", "bn_find_functions", "bn_get_metadata")),

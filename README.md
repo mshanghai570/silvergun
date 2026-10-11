@@ -33,7 +33,7 @@ Silvergun supplies focused context-menu commands for the selected function and a
 | Verify Current Function | `get_verification` | Separates host-proven facts from inferred interpretation and attaches source locators. |
 | Code Map | `code_map` | Produces a compact caller/callee graph for navigation and model-assisted explanation. |
 | Analysis Notebook | `notebook_context`, `notebook_record` | Persists up to 200 evidence-backed findings per binary on the local machine. |
-| Patch Journal | `patch_history`, `undo_last_patch` | Records up to 200 applied patches per binary with original bytes so the latest change can be reversed locally. |
+| Patch Journal | `patch_history`, `undo_last_patch` | Records up to 200 applied patches per binary. Undo verifies that the current bytes still match Silvergun's replacement and refuses to overwrite later edits. |
 
 ## Installation
 
@@ -103,7 +103,8 @@ Silvergun is designed for interactive reverse engineering, not unattended binary
 | API credentials | Use Binary Ninja secrets storage where configured; never log keys. |
 | Remote data | Send only the compact, bounded tool results necessary for the current request. |
 | Model reasoning | Do not request or persist hidden chain-of-thought; responses should state evidence and uncertainty. |
-| Patches | Display exact before/after byte strings and require approval. Assembly patches are NOP-padded to whole instruction boundaries and never overflow them. |
+| Patches | Display exact before/after byte strings and require approval. Writes are read back before being reported or journaled; assembly patches are NOP-padded to whole instruction boundaries and never overflow them. |
+| Undo | Restore only a complete, journaled byte range whose current bytes still match the applied patch. Conflicts and partial writes remain pending for manual review. |
 | Undo | Record original bytes per patch locally so the latest change can be reversed without saving. |
 | Renames, types, comments, tags | Require approval immediately before mutation. |
 | Other plugin commands | Treat as potentially mutating and require approval. |

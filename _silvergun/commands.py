@@ -87,7 +87,10 @@ def inspect_capabilities(bv) -> None:
     adapter_caps = registry.capabilities()
     rows = "\n".join(f"| `{item.identifier}` | {item.name} | {item.description or '—'} |" for item in capabilities)
     adapter_rows = "\n".join(f"| `{cap.identifier}` | {cap.name} | {cap.description[:60]}... |" for cap in adapter_caps)
-    plugin_status = "\n".join(f"- **{name}**: {'available' if info['available'] else 'not available'}" for name, info in [(p['Name'], p) for p in adapter_info])
+    plugin_status = "\n".join(
+        f"- **{info['name']}**: {'available' if info['available'] else 'not available'}"
+        for info in adapter_info
+    ) or "- No built-in or third-party adapters are available in this context."
     report = (
         "# Silvergun Capabilities\n\n"
         f"## Plugin Adapters\n{plugin_status}\n\n"
