@@ -34,7 +34,7 @@ class Route:
 DISCOVERY_TERMS = ("find", "search", "locate", "identify", "discover", "analyze", "audit", "review", "investigate", "scan", "detect")
 
 # Mutation terms that indicate the user wants to modify
-MUTATION_TERMS = ("patch", "fix", "nop", "modify", "instrument", "rename", "apply", "change", "bypass")
+MUTATION_TERMS = ("patch", "fix", "nop", "modify", "instrument", "rename", "apply", "change", "bypass", "assemble", "undo", "revert", "restore")
 
 def _has_term(text: str, term: str) -> bool:
     term = term.strip().lower()
@@ -68,7 +68,7 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
     ("types", ("type", "signature", "prototype", "parameter", "return type", "struct"), ("get_function_context", "get_type_evidence", "apply_function_type")),
     ("xrefs", ("xref", "cross reference", "caller", "callers", "callee", "callees", "call graph"), ("get_function_context", "get_xrefs")),
     # Mutation intents (lower priority when discovery terms also present)
-    ("patch", ("patch", "fix", "nop", "modify", "instrument"), ("get_function_context", "apply_patch")),
+    ("patch", ("patch", "fix", "nop", "modify", "instrument", "assemble", "instruction"), ("get_function_context", "apply_patch", "disassemble", "apply_assembly_patch", "patch_history", "undo_last_patch")),
     ("rename", ("rename", "name this", "better name", "symbol name"), ("get_function_context", "rename_function")),
     ("plugins", ("plugin", "extension", "capability", "command"), ("get_function_context", "search_capabilities", "invoke_external_command")),
     ("batch_scan", ("batch scan", "scan multiple", "scan all functions", "scan many", "analyze many"), ("boolhunter_batch_scan", "boolhunter_quick_scan")),
@@ -81,6 +81,8 @@ INTENTS: tuple[tuple[str, tuple[str, ...], tuple[str, ...]], ...] = (
 # the requested mutation capability alongside the discovery slice.
 _MUTATION_VERB_TOOLS: tuple[tuple[tuple[str, ...], tuple[str, ...]], ...] = (
     (("patch", "fix", "nop", "modify", "instrument", "bypass", "change", "apply"), ("apply_patch",)),
+    (("assemble", "instruction"), ("disassemble", "apply_assembly_patch")),
+    (("undo", "revert", "restore"), ("undo_last_patch",)),
     (("rename",), ("rename_function",)),
     (("signature", "prototype", "parameter type", "return type"), ("apply_function_type",)),
     (("comment", "annotate", "tag", "document"), ("annotate_function",)),
@@ -146,7 +148,7 @@ class CapabilityRouter:
         if has_discovery and has_mutation:
             if best_intent in ("patch", "rename"):
                 if explicit_smart_patch:
-                    selected = ("get_function_context", "apply_patch")
+                    selected = ("get_function_context", "apply_patch", "disassemble", "apply_assembly_patch")
                 else:
                     # Prepend discovery tools
                     discovery_tools = ("find_functions", "semantic_search", "get_xrefs", "boolhunter_quick_scan", "boolhunter_find_category")

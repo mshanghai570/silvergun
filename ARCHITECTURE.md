@@ -46,13 +46,15 @@ Binary Ninja's Python API does not expose a timeout parameter for HLIL materiali
 
 ## Tool and mutation policy
 
-Native analysis tools collect a compact per-function snapshot built from HLIL, function metadata, callers/callees, strings, variables, and types. Results are hard-capped before entering the model context. External plugin commands are discovered via `PluginCommand.get_valid_list(context)` and may be executed only from an allowlist derived from the current compact capability slice. Write operations are separated from analysis: `apply_patch`, `rename_function`, `apply_function_type`, and `annotate_function` require an affirmative confirmation dialog even when proposed by the model.
+Native analysis tools collect a compact per-function snapshot built from HLIL, function metadata, callers/callees, strings, variables, and types. Results are hard-capped before entering the model context. External plugin commands are discovered via `PluginCommand.get_valid_list(context)` and may be executed only from an allowlist derived from the current compact capability slice. Write operations are separated from analysis: `apply_patch`, `apply_assembly_patch`, `undo_last_patch`, `rename_function`, `apply_function_type`, and `annotate_function` require an affirmative confirmation dialog even when proposed by the model.
+
+Smart Patch follows an instruction-level workflow borrowed from Rikugan's Binary Ninja patching skill: `disassemble` decodes the target with raw bytes and lengths, `apply_assembly_patch` assembles the requested mnemonics at the address, computes the shortest whole-instruction span that fits, rejects any overflow, NOP-pads a shorter replacement to the original boundary, verifies the write, and reverts automatically on a partial write. Every applied patch is appended to a local per-binary `PatchJournal` with its original bytes, so `undo_last_patch` can restore the most recent change without a saved database.
 
 | Operation class | Examples | Concurrency | User confirmation |
 | --- | --- | --- | --- |
 | Read | Snapshot, xrefs, function search, capabilities | Binary Ninja API read work is serialized; independent remote model jobs may fan out over frozen snapshots. | No |
 | External command | Invoke another installed plugin command | Serialized with host context and only after capability routing. | Required if a command is not known read-only. |
-| Mutation | Byte patch, rename, type change, tag/comment | Serialized on the host UI thread immediately after approval. | Always |
+| Mutation | Byte patch, assembly patch, undo, rename, type change, tag/comment | Serialized on the host UI thread immediately after approval. | Always |
 
 ## Parallel investigation model
 

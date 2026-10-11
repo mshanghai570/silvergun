@@ -193,6 +193,17 @@ class SilvergunSidebarWidget(SidebarWidget):
         quick_row.addWidget(verify)
         content_layout.addLayout(quick_row)
 
+        patch_row = QHBoxLayout()
+        patch = QPushButton("SMART PATCH")
+        patch.setMaximumWidth(120)
+        patch.clicked.connect(self._smart_patch)
+        undo = QPushButton("UNDO PATCH")
+        undo.setMaximumWidth(120)
+        undo.clicked.connect(self._undo_patch)
+        patch_row.addWidget(patch)
+        patch_row.addWidget(undo)
+        content_layout.addLayout(patch_row)
+
         self._activity = QPlainTextEdit()
         self._activity.setReadOnly(True)
         self._activity.setMaximumHeight(150)  # Increased height for better visibility
@@ -474,6 +485,12 @@ class SilvergunSidebarWidget(SidebarWidget):
 
     def _map(self) -> None:
         self._submit("Build a compact code map for the current function and explain the important caller/callee relationships with evidence.")
+
+    def _smart_patch(self) -> None:
+        self._submit("Review the current function for a precise smart patch. Read exact instructions with disassemble, explain the fix, then call apply_assembly_patch with the minimal replacement; it is NOP-padded to instruction boundaries and verified. Approval is required before any write.")
+
+    def _undo_patch(self) -> None:
+        self._submit("Undo the most recent Silvergun patch on this binary. Call undo_last_patch. If nothing is available to undo, say so plainly.")
 
     def _typed_request(self, fallback: str) -> str:
         """Prefer whatever the analyst typed; fall back to the canned directive."""

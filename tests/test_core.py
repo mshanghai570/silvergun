@@ -231,6 +231,19 @@ class RouterTests(unittest.TestCase):
         self.assertEqual(route.intent, "patch")
         self.assertEqual(route.tools[:2], ("get_function_context", "apply_patch"))
 
+    def test_assembly_patch_request_exposes_disassemble_and_assembler(self):
+        route = CapabilityRouter().route("Assemble an instruction patch to NOP the check", [])
+        self.assertEqual(route.intent, "patch")
+        self.assertEqual(route.tools[:2], ("get_function_context", "apply_patch"))
+        self.assertIn("disassemble", route.tools)
+        self.assertIn("apply_assembly_patch", route.tools)
+
+    def test_undo_request_exposes_patch_history_and_undo(self):
+        route = CapabilityRouter().route("Undo the last patch on this binary", [])
+        self.assertEqual(route.intent, "patch")
+        self.assertIn("undo_last_patch", route.tools)
+        self.assertIn("patch_history", route.tools)
+
     def test_explicit_xref_request_uses_xref_route(self):
         route = CapabilityRouter().route("Analyze this function's callers and callees", [])
         self.assertEqual(route.intent, "xrefs")

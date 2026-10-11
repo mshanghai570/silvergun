@@ -17,6 +17,7 @@ except ImportError:
 
 from .external import ExternalCommandIndex
 from .notebook import AnalysisNotebook, Finding
+from .patchlog import PatchJournal
 from .router import ExternalCapability, capability_digest
 from .events import emit_tool_started, emit_tool_progress, emit_tool_result, emit_tool_completed, emit_tool_failed
 
@@ -24,6 +25,8 @@ from .events import emit_tool_started, emit_tool_progress, emit_tool_result, emi
 MAX_ITEMS = 64
 MAX_TRIAGE_FUNCTIONS = 10000
 MAX_IL_LINES = 180
+MAX_DISASM_INSTRUCTIONS = 80
+MAX_PATCH_INSTRUCTIONS = 8
 
 
 def _on_main_thread(callback: Callable[[], Any]) -> Any:
@@ -74,7 +77,11 @@ TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "fanout_investigate": _function_schema("fanout_investigate", "Request independent read-only reviews of several functions. The execution layer snapshots first, then runs bounded remote work in parallel.", {"addresses": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 8}, "focus": {"type": "string", "description": "Question each review should answer."}}, ["addresses", "focus"]),
     "search_capabilities": _function_schema("search_capabilities", "Search the compact index of compatible installed Binary Ninja plugin commands.", {"query": {"type": "string"}}, ["query"]),
     "invoke_external_command": _function_schema("invoke_external_command", "Invoke a capability from another installed Binary Ninja plugin. Always requires user approval.", {"capability_id": {"type": "string"}}, ["capability_id"]),
+    "disassemble": _function_schema("disassemble", "Read instruction-level disassembly (address, raw bytes, mnemonic, length) for a function or an address. Use this before proposing an assembly patch so the patch fits real instruction boundaries.", {"address": {"type": "string", "description": "Optional hexadecimal start address; current function when omitted."}, "count": {"type": "integer", "minimum": 1, "maximum": MAX_DISASM_INSTRUCTIONS, "description": "Maximum instructions to read (default 24)."}}),
     "apply_patch": _function_schema("apply_patch", "Write a proposed byte patch. Always shows the user exact before/after bytes for approval.", {"address": {"type": "string", "description": "Patch start address in hexadecimal."}, "bytes_hex": {"type": "string", "description": "Replacement bytes, hexadecimal pairs only."}, "reason": {"type": "string"}}, ["address", "bytes_hex", "reason"]),
+    "apply_assembly_patch": _function_schema("apply_assembly_patch", "Assemble instructions at an address and write them after user approval. The result is NOP-padded to whole original instruction boundaries; a replacement that would overflow them is rejected. Use disassemble first and prefer the minimal edit.", {"address": {"type": "string", "description": "Patch start address in hexadecimal."}, "assembly": {"type": "string", "description": "Assembly text to assemble at that address, e.g. 'mov eax, 6' or 'jmp 0x401300'."}, "instructions": {"type": "integer", "minimum": 1, "maximum": MAX_PATCH_INSTRUCTIONS, "description": "Optional number of original instructions to replace; defaults to the smallest span that fits."}, "reason": {"type": "string"}}, ["address", "assembly", "reason"]),
+    "patch_history": _function_schema("patch_history", "List Silvergun patches recorded locally for this binary, newest first, including any that can still be undone.", {}),
+    "undo_last_patch": _function_schema("undo_last_patch", "Restore the original bytes of the most recent Silvergun patch on this binary after user approval.", {}),
     "rename_function": _function_schema("rename_function", "Rename a function after user approval.", {"address": {"type": "string"}, "name": {"type": "string", "minLength": 1, "maxLength": 160}, "reason": {"type": "string"}}, ["name", "reason"]),
     "apply_function_type": _function_schema("apply_function_type", "Apply a C-like function declaration after user approval. Use only a complete declaration.", {"address": {"type": "string"}, "declaration": {"type": "string", "minLength": 3, "maxLength": 800}, "reason": {"type": "string"}}, ["declaration", "reason"]),
     "annotate_function": _function_schema("annotate_function", "Set a concise function comment and optional tag after user approval.", {"address": {"type": "string"}, "comment": {"type": "string", "minLength": 1, "maxLength": 4000}, "tag": {"type": "string", "maxLength": 120}}, ["comment"]),
@@ -166,7 +173,11 @@ class NativeTools:
             "notebook_record": self._notebook_record,
             "search_capabilities": self._search_capabilities,
             "invoke_external_command": self._invoke_external,
+            "disassemble": self._disassemble,
             "apply_patch": self._apply_patch,
+            "apply_assembly_patch": self._apply_assembly_patch,
+            "patch_history": self._patch_history,
+            "undo_last_patch": self._undo_last_patch,
             "rename_function": self._rename,
             "apply_function_type": self._apply_type,
             "annotate_function": self._annotate,
@@ -471,7 +482,152 @@ class NativeTools:
             return "User declined the patch."
         written = self.bv.write(address, replacement)
         self._invalidate_snapshot(address)
-        return f"Patch {'applied' if written == len(replacement) else 'partially applied'} at {hex(address)} ({written}/{len(replacement)} bytes)."
+        if written != len(replacement):
+            self.bv.write(address, original)
+            self._invalidate_snapshot(address)
+            return f"Patch failed to write fully ({written}/{len(replacement)} bytes); original bytes restored."
+        self._verify_analysis()
+        journal = PatchJournal(self._binary_filename())
+        journal.record(address, original, replacement, reason, tool="apply_patch")
+        summary = journal.summary()
+        return json.dumps({
+            "applied": True,
+            "address": hex(address),
+            "original_hex": original.hex(" "),
+            "replacement_hex": replacement.hex(" "),
+            "pending_undo": summary["pending"],
+            "note": "In-memory patch. Undo with undo_last_patch; save the database to persist it.",
+        }, separators=(",", ":"))
+
+    @_main_thread
+    def _disassemble(self, args: dict[str, Any]) -> str:
+        raw = args.get("address")
+        func = self.function
+        if raw in (None, ""):
+            if func is None:
+                return json.dumps({"error": "No function is selected; pass an address."}, separators=(",", ":"))
+            address = int(func.start)
+        else:
+            try:
+                address = _address(str(raw), None)
+            except ValueError as error:
+                return f"Invalid address: {error}"
+            func = self._function_at(address)
+        count = min(MAX_DISASM_INSTRUCTIONS, max(1, int(args.get("count", 24))))
+        instructions = self._read_instructions(address, count)
+        return json.dumps({
+            "function": hex(func.start) if func is not None else None,
+            "address": hex(address),
+            "instructions": instructions,
+            "evidence": [f"Architecture instruction decode at {hex(address)}"],
+        }, separators=(",", ":"))
+
+    @_main_thread
+    def _apply_assembly_patch(self, args: dict[str, Any]) -> str:
+        try:
+            address = _address(str(args.get("address", "")), None)
+        except ValueError as error:
+            return f"Invalid patch request: {error}"
+        assembly = str(args.get("assembly", "")).strip()
+        if not assembly:
+            return "Invalid patch request: assembly text is required."
+        reason = str(args.get("reason", ""))
+        arch = getattr(self.bv, "arch", None)
+        if arch is None or not hasattr(arch, "assemble"):
+            return "The current architecture does not expose an assembler; use apply_patch with explicit bytes instead."
+
+        assembled = self._assemble(assembly, address)
+        if not assembled:
+            return "The assembler could not encode those instructions at this address. Check the syntax and target offset with disassemble."
+
+        requested = args.get("instructions")
+        try:
+            instruction_count = int(requested) if requested not in (None, "") else None
+        except (TypeError, ValueError):
+            instruction_count = None
+        span = self._patch_span(address, len(assembled), instruction_count)
+        if span is None:
+            return (
+                f"Replacement is {len(assembled)} bytes, which does not fit within {MAX_PATCH_INSTRUCTIONS} original "
+                "instructions (or the address is not on an instruction boundary). Split the edit into smaller steps."
+            )
+
+        replacement, padded = self._pad_to(assembled, span, address)
+        original = bytes(self.bv.read(address, span))
+        before = self._disassembly_text(address, span)
+        prompt = (
+            f"Apply assembly patch at {hex(address)}?\n\n"
+            f"Assembly: {assembly}\n\n"
+            f"Before: {original.hex(' ')}\n         {before}\n"
+            f"After:  {replacement.hex(' ')}"
+            + (f"\n         ({padded} NOP byte(s) pad to instruction boundary)" if padded else "")
+            + f"\n\nReason: {reason}"
+        )
+        if not self._confirm("Apply Silvergun Patch", prompt):
+            return "User declined the patch."
+
+        written = self.bv.write(address, replacement)
+        self._invalidate_snapshot(address)
+        if written != len(replacement):
+            self.bv.write(address, original)
+            self._invalidate_snapshot(address)
+            return f"Patch failed to write fully ({written}/{len(replacement)} bytes); original bytes restored."
+        self._verify_analysis()
+        journal = PatchJournal(self._binary_filename())
+        journal.record(address, original, replacement, reason, tool="apply_assembly_patch")
+        return json.dumps({
+            "applied": True,
+            "address": hex(address),
+            "assembly": assembly,
+            "original_hex": original.hex(" "),
+            "replacement_hex": replacement.hex(" "),
+            "padded_nops": padded,
+            "after_disassembly": self._disassembly_text(address, span),
+            "pending_undo": journal.summary()["pending"],
+            "note": "In-memory patch. Undo with undo_last_patch; save the database to persist it.",
+        }, separators=(",", ":"))
+
+    @_main_thread
+    def _patch_history(self, _args: dict[str, Any]) -> str:
+        journal = PatchJournal(self._binary_filename())
+        summary = journal.summary()
+        return json.dumps({
+            "entries": journal.entries()[-MAX_ITEMS:],
+            "pending_undo": summary["pending"],
+            "note": "Local patch journal for this binary; undo restores the most recent entry.",
+        }, separators=(",", ":"))
+
+    @_main_thread
+    def _undo_last_patch(self, _args: dict[str, Any]) -> str:
+        journal = PatchJournal(self._binary_filename())
+        entry = journal.last()
+        if entry is None:
+            return "No Silvergun patch is available to undo for this binary."
+        try:
+            address = int(str(entry.get("address", "0x0")), 16)
+            original = bytes.fromhex(str(entry.get("original_hex", "")))
+        except ValueError as error:
+            return f"The patch journal entry is invalid: {error}"
+        current = bytes(self.bv.read(address, len(original)))
+        prompt = (
+            f"Undo patch at {hex(address)}?\n\n"
+            f"Current: {current.hex(' ')}\n"
+            f"Restore: {original.hex(' ')}\n\n"
+            f"Reason: {entry.get('reason', '')}"
+        )
+        if not self._confirm("Undo Silvergun Patch", prompt):
+            return "User declined the undo."
+        written = self.bv.write(address, original)
+        self._invalidate_snapshot(address)
+        self._verify_analysis()
+        journal.mark_undone(entry)
+        return json.dumps({
+            "undone": True,
+            "address": hex(address),
+            "restored_hex": original.hex(" "),
+            "written": written,
+            "remaining": journal.summary()["pending"],
+        }, separators=(",", ":"))
 
     @_main_thread
     def _rename(self, args: dict[str, Any]) -> str:
@@ -530,6 +686,87 @@ class NativeTools:
     def _function_at(self, address: int):
         return self.bv.get_function_at(address) or self.bv.get_function_containing(address)
 
+    def _binary_filename(self) -> str:
+        return str(getattr(getattr(self.bv, "file", None), "filename", ""))
+
+    def _verify_analysis(self) -> None:
+        """Ask Binary Ninja to re-analyze after a write; optional and best-effort."""
+        update = getattr(self.bv, "update_analysis_and_wait", None)
+        if callable(update):
+            try:
+                update()
+            except Exception:
+                pass
+
+    def _instruction_at(self, address: int) -> tuple[str, int]:
+        return _instruction_at(self.bv, address)
+
+    def _read_instructions(self, address: int, count: int) -> list[dict[str, Any]]:
+        instructions: list[dict[str, Any]] = []
+        cursor = int(address)
+        for _ in range(count):
+            text, length = self._instruction_at(cursor)
+            if length <= 0:
+                break
+            try:
+                raw = bytes(self.bv.read(cursor, length))
+            except Exception:
+                raw = b""
+            instructions.append({"address": hex(cursor), "bytes": raw.hex(" "), "length": length, "text": text})
+            cursor += length
+        return instructions
+
+    def _patch_span(self, address: int, needed: int, instructions: int | None) -> int | None:
+        """Byte length of whole original instructions the patch may replace."""
+        if needed <= 0:
+            return None
+        cap = instructions if instructions else MAX_PATCH_INSTRUCTIONS
+        if cap < 1 or cap > MAX_PATCH_INSTRUCTIONS:
+            return None
+        cursor = int(address)
+        total = 0
+        for _ in range(cap):
+            _text, length = self._instruction_at(cursor)
+            if length <= 0:
+                return None
+            total += length
+            cursor += length
+            if instructions is None and total >= needed:
+                return total
+        return total if total >= needed else None
+
+    def _assemble(self, assembly: str, address: int) -> bytes | None:
+        arch = getattr(self.bv, "arch", None)
+        if arch is None or not hasattr(arch, "assemble"):
+            return None
+        try:
+            data = arch.assemble(assembly, address)
+        except Exception:
+            return None
+        if not data:
+            return None
+        return bytes(data)
+
+    def _pad_to(self, assembled: bytes, target: int, address: int) -> tuple[bytes, int]:
+        if len(assembled) >= target:
+            return assembled, 0
+        pad_len = target - len(assembled)
+        nop = self._assemble("nop", address) or b"\x90"
+        padding = (nop * ((pad_len // len(nop)) + 1))[:pad_len]
+        return assembled + padding, pad_len
+
+    def _disassembly_text(self, address: int, length: int) -> str:
+        parts: list[str] = []
+        cursor = int(address)
+        end = int(address) + int(length)
+        while cursor < end:
+            text, step = self._instruction_at(cursor)
+            if step <= 0:
+                break
+            parts.append(f"{hex(cursor)}: {text}")
+            cursor += step
+        return " | ".join(parts)
+
     def _snapshot(self, func) -> dict[str, Any]:
         il_lines = []
         try:
@@ -581,6 +818,31 @@ def _address(value: str, default: int | None) -> int:
         if re.fullmatch(r"[0-9a-fA-F]+", value):
             return int(value, 16)
         raise
+
+
+def _instruction_at(bv, address: int) -> tuple[str, int]:
+    """Decode one instruction at an address, tolerating Binary Ninja API variance."""
+    arch = getattr(bv, "arch", None)
+    text = ""
+    length = 0
+    if arch is not None and hasattr(arch, "get_instruction_text"):
+        try:
+            data = bytes(bv.read(address, 16))
+            tokens, length = arch.get_instruction_text(data, address)
+            text = "".join(str(getattr(token, "text", "")) for token in tokens)
+        except Exception:
+            length = 0
+    if length <= 0:
+        try:
+            length = int(bv.get_instruction_length(address))
+        except Exception:
+            length = 0
+    if not text:
+        try:
+            text = str(bv.get_disassembly(address) or "")
+        except Exception:
+            text = ""
+    return text, length
 
 
 def _hex_bytes(value: str) -> bytes:

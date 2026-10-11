@@ -20,7 +20,9 @@ Silvergun supplies focused context-menu commands for the selected function and a
 | Command | Native tool path | Outcome |
 | --- | --- | --- |
 | Explain Function | `get_function_context`, `get_xrefs` | Describes likely purpose, inputs, outputs, side effects, and uncertainty. |
-| Smart Patch | `get_function_context`, `apply_patch` | Proposes an exact byte patch; displays current and replacement bytes before writing. |
+| Smart Patch | `get_function_context`, `disassemble`, `apply_assembly_patch` | Reads exact instructions, then assembles a minimal replacement (NOP-padded to instruction boundaries) and displays before/after bytes before writing. `apply_patch` remains available for known raw bytes. |
+| Disassemble Function | `disassemble` | Instruction-level view with raw bytes and lengths, showing the byte boundaries a patch must respect. |
+| Undo Last Patch | `patch_history`, `undo_last_patch` | Restores the original bytes of the most recent Silvergun patch after approval. |
 | Rename Function | `get_function_context`, `rename_function` | Suggests a semantic name with behavior-based justification. |
 | Suggest Types | `get_function_context`, `get_type_evidence`, `apply_function_type` | Recovers a likely signature and applies only a user-approved declaration. |
 | Analyze Xrefs | `get_function_context`, `get_xrefs` | Maps callers, callees, and control/data-flow boundaries. |
@@ -31,6 +33,7 @@ Silvergun supplies focused context-menu commands for the selected function and a
 | Verify Current Function | `get_verification` | Separates host-proven facts from inferred interpretation and attaches source locators. |
 | Code Map | `code_map` | Produces a compact caller/callee graph for navigation and model-assisted explanation. |
 | Analysis Notebook | `notebook_context`, `notebook_record` | Persists up to 200 evidence-backed findings per binary on the local machine. |
+| Patch Journal | `patch_history`, `undo_last_patch` | Records up to 200 applied patches per binary with original bytes so the latest change can be reversed locally. |
 
 ## Installation
 
@@ -100,7 +103,8 @@ Silvergun is designed for interactive reverse engineering, not unattended binary
 | API credentials | Use Binary Ninja secrets storage where configured; never log keys. |
 | Remote data | Send only the compact, bounded tool results necessary for the current request. |
 | Model reasoning | Do not request or persist hidden chain-of-thought; responses should state evidence and uncertainty. |
-| Patches | Display exact before/after byte strings and require approval. |
+| Patches | Display exact before/after byte strings and require approval. Assembly patches are NOP-padded to whole instruction boundaries and never overflow them. |
+| Undo | Record original bytes per patch locally so the latest change can be reversed without saving. |
 | Renames, types, comments, tags | Require approval immediately before mutation. |
 | Other plugin commands | Treat as potentially mutating and require approval. |
 | Agent execution | Limit tool rounds and suppress duplicate calls. |
@@ -130,6 +134,7 @@ python3 -m unittest discover -s tests -v
 │   ├── config.py               # User settings, model cache, secret-provider key storage
 │   ├── client.py               # Standard-library OpenAI-compatible transport
 │   ├── notebook.py             # Atomic local per-binary findings notebook
+│   ├── patchlog.py             # Atomic per-binary patch journal enabling one-step undo
 │   ├── router.py               # Deterministic capability router
 │   ├── external.py             # Installed PluginCommand index and guarded executor
 │   ├── tools.py                # Compact analysis tools and approval-gated mutations

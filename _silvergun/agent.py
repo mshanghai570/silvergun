@@ -32,7 +32,12 @@ occurred unless a tool reports it. Do not reveal hidden reasoning; return only a
 answer with concrete next actions when appropriate. Treat the user's request as a goal to
 complete, not a question to summarize: decompose it into evidence-gathering steps, and when
 the goal includes a mutation (patch, rename, type, annotation) propose it with the matching
-tool — every mutation asks the user for approval before anything is written. When a request is
+tool — every mutation asks the user for approval before anything is written. For byte-level
+patches, prefer the disassemble→apply_assembly_patch workflow: read the exact instructions and
+their byte lengths first, then assemble the minimal replacement (the result is NOP-padded to the
+original instruction boundary and verified after writing). Use apply_patch only when the exact
+replacement bytes are already known, and undo_last_patch to reverse the most recent change.
+When a request is
 about specific text content (strings, URLs, passwords, secrets) prefer bn_search_strings; when
 it is about symbols or function names prefer bn_search_symbols or bn_find_functions; then use
 get_xrefs to see who uses the matches. For semantic categories, use canonical BoolHunter values
@@ -41,6 +46,7 @@ durable-finding tool. Do not repeat a tool call that returned the same data;
 move to the next step or answer."""
 
 ROUTE_GUIDANCE = {
+    "patch": "Prefer the disassemble→apply_assembly_patch workflow: read exact instructions and byte lengths, then assemble the minimal replacement. Explain the fix and cite the original instructions before proposing the patch; every write needs approval.",
     "search": "Treat this as a provider-neutral search. If the user names a plugin, use search_capabilities to resolve that exact installed capability, then invoke_external_command when it is available and approved. Also compare the plugin result with Binary Ninja's native search tools and Silvergun's local semantic/query tools when the request asks to find functions. BoolHunter is only one optional provider; never assume it is the right or only searcher. If one provider returns zero results, try the other relevant providers before concluding that nothing matched.",
     "triage": "Triage locally first; return a ranked shortlist with the exact matching evidence for each function.",
     "verify": "Verify before interpreting; label every statement PROVEN, INFERRED, or HYPOTHESIS and cite a host source.",
@@ -56,11 +62,12 @@ ROUTE_GUIDANCE = {
     "continue": "Restore the case file with notebook_context first, then re-verify the recorded leads with fresh evidence before acting on them.",
 }
 
-MUTATION_TOOLS = frozenset({"apply_patch", "rename_function", "apply_function_type", "annotate_function", "invoke_external_command"})
+MUTATION_TOOLS = frozenset({"apply_patch", "apply_assembly_patch", "undo_last_patch", "rename_function", "apply_function_type", "annotate_function", "invoke_external_command"})
 MAX_CAPABILITY_EXECUTIONS = 24
 EVIDENCE_TOOLS = frozenset({
     "get_function_context", "get_xrefs", "get_type_evidence", "review_vulnerabilities",
     "semantic_search", "query_binary", "get_verification", "code_map", "bn_analyze",
+    "disassemble", "patch_history",
     "bn_decompile", "bn_find_cross_references", "bn_search_strings", "bn_search_symbols",
     "bn_find_functions", "boolhunter_quick_scan", "boolhunter_analyze", "boolhunter_batch_scan",
     "boolhunter_find_category", "fanout_investigate", "search_capabilities", "invoke_external_command",

@@ -7,6 +7,7 @@ from binaryninja import PluginCommand, log_info, log_warn
 from _silvergun.commands import (
     annotate_current,
     configure_provider,
+    disassemble_current,
     explain_current,
     find_vulnerabilities_current,
     inspect_capabilities,
@@ -16,6 +17,7 @@ from _silvergun.commands import (
     smart_patch_current,
     suggest_types_current,
     triage_binary,
+    undo_patch,
     verify_current,
     xref_analysis_current,
 )
@@ -33,6 +35,8 @@ PluginCommand.register("Silvergun\\Configure Provider...", "Configure an OpenAI-
 PluginCommand.register("Silvergun\\Ask...", "Send a compact, routed request to Silvergun.", run_prompt)
 PluginCommand.register_for_function("Silvergun\\Explain Function", "Explain the selected function using compact decompilation context.", explain_current)
 PluginCommand.register_for_function("Silvergun\\Smart Patch", "Propose a precise patch for the selected function; never applies without approval.", smart_patch_current)
+PluginCommand.register_for_function("Silvergun\\Disassemble Function", "Read instruction-level disassembly with byte boundaries.", disassemble_current)
+PluginCommand.register("Silvergun\\Undo Last Patch", "Restore the original bytes of the most recent Silvergun patch.", undo_patch)
 PluginCommand.register_for_function("Silvergun\\Rename Function", "Suggest and confirm a semantic function name.", rename_current)
 PluginCommand.register_for_function("Silvergun\\Suggest Types", "Recover and propose a function signature and variable types.", suggest_types_current)
 PluginCommand.register_for_function("Silvergun\\Analyze Xrefs", "Analyze callers, callees, and cross-reference implications.", xref_analysis_current)

@@ -35,7 +35,15 @@ def explain_current(bv, function) -> None:
 
 
 def smart_patch_current(bv, function) -> None:
-    _start(bv, function, "Review this function for a precise smart patch. Explain the fix first. Call apply_patch only for an exact, necessary byte-level patch; it requires user approval.")
+    _start(bv, function, "Review this function for a precise smart patch. Read the exact instructions with disassemble, explain the fix, then call apply_assembly_patch with the minimal replacement (it is NOP-padded to instruction boundaries and verified). Use apply_patch only when exact bytes are already known. Every write requires user approval.")
+
+
+def disassemble_current(bv, function) -> None:
+    _start(bv, function, "Disassemble this function at instruction level. Report the instructions that implement its key behavior and the exact byte boundaries a patch would need.")
+
+
+def undo_patch(bv, function=None) -> None:
+    _start(bv, function or None, "Undo the most recent Silvergun patch on this binary. Call undo_last_patch. If nothing is available to undo, say so plainly.")
 
 
 def rename_current(bv, function) -> None:
